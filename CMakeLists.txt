@@ -18,6 +18,7 @@ if(NOT TARGET SQLite3::SQLite3)
     )
 endif()
 find_package(nlohmann_json REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
 
 include(FetchContent)
 FetchContent_Declare(
