@@ -2,93 +2,150 @@
 #include "crypto/sha256.hpp"
 #include "crypto/base64.hpp"
 #include "crypto/constant_time.hpp"
-
 #include <iostream>
 #include <cassert>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 static std::string to_hex(const std::vector<uint8_t>& data) {
     std::ostringstream oss;
-
-    for (uint8_t b : data) {
-        oss << std::hex
-            << std::setw(2)
-            << std::setfill('0')
-            << static_cast<int>(b);
-    }
-
+    for (uint8_t b : data)
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
     return oss.str();
 }
 
 int main() {
-    auto h1 = crypto::hmac_sha1("secret", "1715510400:user1");
-    std::string cred = crypto::base64_encode(h1);
+    {
+        auto h1 = crypto::hmac_sha1("secret", "1715510400:user1");
+        std::string cred = crypto::base64_encode(h1);
+        assert(!cred.empty());
+        assert(cred == "EFrMV7wNTxCcOVqfLmBrjYLpc2c=");
+        assert(h1.size() == 20);
 
-    assert(!cred.empty());
-    assert(cred == "EFrMV7wNTxCcOVqfLmBrjYLpc2c=");
+        auto h1_empty_key = crypto::hmac_sha1("", "data");
+        assert(h1_empty_key.size() == 20);
 
-    auto h256 = crypto::hmac_sha256(
-        "key",
-        "The quick brown fox jumps over the lazy dog"
-    );
+        auto h1_empty_data = crypto::hmac_sha1("key", "");
+        assert(h1_empty_data.size() == 20);
 
-    assert(h256.size() == 32);
+        auto h1_both_empty = crypto::hmac_sha1("", "");
+        assert(h1_both_empty.size() == 20);
 
-    auto h256_hex = to_hex(h256);
+        assert(h1_empty_key != h1_empty_data);
+    }
+    std::cout << "[hmac_sha1] OK\n";
 
-    assert(
-        h256_hex ==
-        "f7bc83f430538424b13298e6aa6fb143"
-        "ef4d59a14946175997479dbc2d1a3cd8"
-    );
+    {
+        auto h256 = crypto::hmac_sha256(
+            "key",
+            "The quick brown fox jumps over the lazy dog"
+        );
+        assert(h256.size() == 32);
+        assert(to_hex(h256) ==
+            "f7bc83f430538424b13298e6aa6fb143"
+            "ef4d59a14946175997479dbc2d1a3cd8");
 
-    auto key = crypto::long_term_key(
-        "user1",
-        "chat.example.com",
-        "password123"
-    );
+        auto h256_empty_key = crypto::hmac_sha256("", "data");
+        assert(h256_empty_key.size() == 32);
 
-    assert(key.size() == 32);
+        auto h256_empty_data = crypto::hmac_sha256("key", "");
+        assert(h256_empty_data.size() == 32);
 
-    auto key_hex = to_hex(key);
+        auto h256_both_empty = crypto::hmac_sha256("", "");
+        assert(h256_both_empty.size() == 32);
 
-    assert(
-        key_hex ==
-        "1875dd9e5e407806aa7cd2339e9eb217"
-        "d26a42e17f0f16a02dd32b7033327b9f"
-    );
+        assert(h256_empty_key != h256_empty_data);
 
-    std::vector<uint8_t> a = {1, 2, 3};
-    std::vector<uint8_t> b = {1, 2, 3};
-    std::vector<uint8_t> c = {1, 2, 4};
+        std::vector<uint8_t> vec_key = {'k', 'e', 'y'};
+        auto h256_vec = crypto::hmac_sha256(vec_key, "The quick brown fox jumps over the lazy dog");
+        assert(h256_vec == h256);
+    }
+    std::cout << "[hmac_sha256] OK\n";
 
-    assert(crypto::constant_time_compare(a, b));
-    assert(!crypto::constant_time_compare(a, c));
+    {
+        auto key = crypto::long_term_key("user1", "chat.example.com", "password123");
+        assert(key.size() == 32);
+        assert(to_hex(key) ==
+            "1875dd9e5e407806aa7cd2339e9eb217"
+            "d26a42e17f0f16a02dd32b7033327b9f");
 
-    std::vector<uint8_t> data = {0xDE, 0xAD, 0xBE, 0xEF};
+        auto key_empty = crypto::long_term_key("", "", "");
+        assert(key_empty.size() == 32);
 
-    auto encoded = crypto::base64_encode(data);
+        auto key_same_concat = crypto::long_term_key("a:b", "", "c");
+        auto key_diff_split  = crypto::long_term_key("a", "b", "c");
+        assert(key_same_concat != key_diff_split);
+    }
+    std::cout << "[sha256/long_term_key] OK\n";
 
-    assert(encoded == "3q2+7w==");
+    {
+        std::vector<uint8_t> a = {1, 2, 3};
+        std::vector<uint8_t> b = {1, 2, 3};
+        std::vector<uint8_t> c = {1, 2, 4};
+        assert( crypto::constant_time_compare(a, b));
+        assert(!crypto::constant_time_compare(a, c));
 
-    auto decoded = crypto::base64_decode(encoded);
+        std::vector<uint8_t> shorter = {1, 2};
+        assert(!crypto::constant_time_compare(a, shorter));
+        assert(!crypto::constant_time_compare(shorter, a));
 
-    assert(decoded == data);
+        std::vector<uint8_t> empty1, empty2;
+        assert( crypto::constant_time_compare(empty1, empty2));
+        assert(!crypto::constant_time_compare(empty1, a));
 
-    auto empty_hmac = crypto::hmac_sha256("", "");
+        assert( crypto::constant_time_compare(std::string("abc"), std::string("abc")));
+        assert(!crypto::constant_time_compare(std::string("abc"), std::string("abd")));
+        assert(!crypto::constant_time_compare(std::string("ab"),  std::string("abc")));
+        assert( crypto::constant_time_compare(std::string(""),    std::string("")));
 
-    assert(empty_hmac.size() == 32);
+        uint8_t raw_a[] = {1, 2, 3};
+        uint8_t raw_b[] = {1, 2, 3};
+        uint8_t raw_c[] = {1, 2, 4};
+        assert( crypto::constant_time_compare(raw_a, raw_b, 3));
+        assert(!crypto::constant_time_compare(raw_a, raw_c, 3));
+    }
+    std::cout << "[constant_time_compare] OK\n";
 
-    auto empty_b64 = crypto::base64_encode({});
+    {
+        std::vector<uint8_t> data = {0xDE, 0xAD, 0xBE, 0xEF};
+        auto encoded = crypto::base64_encode(data);
+        assert(encoded == "3q2+7w==");
+        auto decoded = crypto::base64_decode(encoded);
+        assert(decoded == data);
 
-    assert(empty_b64.empty());
+        std::vector<uint8_t> one_byte = {0x41};
+        auto enc1 = crypto::base64_encode(one_byte);
+        assert(enc1 == "QQ==");
+        assert(crypto::base64_decode(enc1) == one_byte);
 
-    auto empty_decoded = crypto::base64_decode("");
+        std::vector<uint8_t> two_bytes = {0x41, 0x42};
+        auto enc2 = crypto::base64_encode(two_bytes);
+        assert(enc2 == "QUI=");
+        assert(crypto::base64_decode(enc2) == two_bytes);
 
-    assert(empty_decoded.empty());
+        std::vector<uint8_t> three_bytes = {0x41, 0x42, 0x43};
+        auto enc3 = crypto::base64_encode(three_bytes);
+        assert(enc3 == "QUJD");
+        assert(crypto::base64_decode(enc3) == three_bytes);
 
-    std::cout << "All tests passed\n";
+        auto empty_b64 = crypto::base64_encode({});
+        assert(empty_b64.empty());
+        auto empty_decoded = crypto::base64_decode("");
+        assert(empty_decoded.empty());
 
+        try {
+            crypto::base64_decode("not_valid!!!");
+            assert(false);
+        } catch (const std::invalid_argument&) {}
+
+        try {
+            crypto::base64_decode("abc");
+            assert(false);
+        } catch (const std::invalid_argument&) {}
+    }
+    std::cout << "[base64] OK\n";
+
+    std::cout << "\nAll tests passed\n";
     return 0;
 }
