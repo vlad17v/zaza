@@ -3,10 +3,20 @@ if(BUILD_TESTS_SHARED)
     target_link_libraries(test_crypto PRIVATE shared)
 endif()
 
-#if(BUILD_TESTS_TURN)
-#    add_executable(test_turn test_turn.cpp)
-#    target_link_libraries(test_turn PRIVATE shared turn_server)
-#endif()
+if(BUILD_TESTS_TURN)
+    add_executable(test_turn test_turn.cpp)
+    target_include_directories(test_turn PRIVATE
+        ${CMAKE_SOURCE_DIR}/turn_server/src
+    )
+    target_link_libraries(test_turn PRIVATE
+        shared
+        Boost::system
+    )
+    target_sources(test_turn PRIVATE
+        ${CMAKE_SOURCE_DIR}/turn_server/src/message/parser.cpp
+        ${CMAKE_SOURCE_DIR}/turn_server/src/message/builder.cpp
+    )
+endif()
 
 if(BUILD_TESTS_BACKEND)
     add_executable(test_backend test_backend.cpp)
