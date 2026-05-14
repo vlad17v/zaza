@@ -3,6 +3,14 @@ if(BUILD_TESTS_SHARED)
     target_link_libraries(test_crypto PRIVATE shared)
 endif()
 
+if(BUILD_TESTS_BACKEND)
+    add_executable(test_backend test_backend.cpp)
+    target_include_directories(test_backend PRIVATE
+        ${CMAKE_SOURCE_DIR}/backend
+    )
+    target_link_libraries(test_backend PRIVATE shared backend)
+endif()
+
 if(BUILD_TESTS_TURN)
     add_executable(test_turn test_turn.cpp)
     target_include_directories(test_turn PRIVATE
@@ -15,18 +23,8 @@ if(BUILD_TESTS_TURN)
     target_sources(test_turn PRIVATE
         ${CMAKE_SOURCE_DIR}/turn_server/src/message/parser.cpp
         ${CMAKE_SOURCE_DIR}/turn_server/src/message/builder.cpp
+        ${CMAKE_SOURCE_DIR}/turn_server/src/auth/nonce_manager.cpp
+        ${CMAKE_SOURCE_DIR}/turn_server/src/auth/hmac_validator.cpp
+        ${CMAKE_SOURCE_DIR}/turn_server/src/auth/long_term_cred.cpp
     )
 endif()
-
-if(BUILD_TESTS_BACKEND)
-    add_executable(test_backend test_backend.cpp)
-    target_include_directories(test_backend PRIVATE
-        ${CMAKE_SOURCE_DIR}/backend
-    )
-    target_link_libraries(test_backend PRIVATE shared backend)
-endif()
-
-#if(BUILD_TESTS_CLIENT)
-#    add_executable(test_client test_client.cpp)
-#    target_link_libraries(test_client PRIVATE shared client_cli)
-#endif()
