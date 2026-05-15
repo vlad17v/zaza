@@ -1,7 +1,13 @@
 #include "auth/jwt.hpp"
 #include "auth/user_store.hpp"
 #include "auth/auth_service.hpp"
+#include "calls/call_manager.hpp"
+#include "api/routes.hpp"
+#include "crypto/hmac.hpp"
+#include "crypto/base64.hpp"
 
+#include <nlohmann/json.hpp>
+#include <thread>
 #include <iostream>
 #include <cassert>
 #include <cstdio>
@@ -560,6 +566,189 @@ int main() {
         auto [s7, b7] = dispatch("POST", "/api/auth/login?foo=bar", "");
         assert(s7 == 200);
         std::cout << "[http routing] POST with query string stripped OK\n";
+    }
+
+    std::cout << "\n=== CallManager ===\n";
+
+    {
+        calls::CallManager mgr;
+        auto callId = mgr.create("alice", "bob");
+        assert(!callId.empty());
+        auto s = mgr.find(callId);
+        assert(s.has_value());
+        assert(s->callerId == "alice");
+        assert(s->calleeId == "bob");
+        assert(s->state    == calls::CallState::Ringing);
+        std::cout << "[call_manager] create OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        auto callId = mgr.create("alice", "bob");
+        auto s = mgr.accept(callId, "bob");
+        assert(s.state == calls::CallState::Active);
+        auto found = mgr.find(callId);
+        assert(found.has_value());
+        assert(found->state == calls::CallState::Active);
+        std::cout << "[call_manager] accept OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        auto callId = mgr.create("alice", "bob");
+        auto s = mgr.reject(callId, "bob");
+        assert(s.state == calls::CallState::Ended);
+        assert(!mgr.find(callId).has_value());
+        std::cout << "[call_manager] reject OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        auto callId = mgr.create("alice", "bob");
+        mgr.accept(callId, "bob");
+        auto s = mgr.hangup(callId, "alice");
+        assert(s.state == calls::CallState::Ended);
+        assert(!mgr.find(callId).has_value());
+        std::cout << "[call_manager] hangup by caller OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        auto callId = mgr.create("alice", "bob");
+        mgr.accept(callId, "bob");
+        auto s = mgr.hangup(callId, "bob");
+        assert(s.state == calls::CallState::Ended);
+        std::cout << "[call_manager] hangup by callee OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        mgr.create("alice", "bob");
+        try {
+            mgr.create("alice", "carol");
+            assert(false);
+        } catch (const std::runtime_error&) {}
+        std::cout << "[call_manager] caller busy OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        mgr.create("alice", "bob");
+        try {
+            mgr.create("carol", "bob");
+            assert(false);
+        } catch (const std::runtime_error&) {}
+        std::cout << "[call_manager] callee busy OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        try {
+            mgr.accept("nonexistent", "bob");
+            assert(false);
+        } catch (const std::runtime_error&) {}
+        std::cout << "[call_manager] accept nonexistent OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        auto callId = mgr.create("alice", "bob");
+        try {
+            mgr.accept(callId, "wrong_user");
+            assert(false);
+        } catch (const std::runtime_error&) {}
+        std::cout << "[call_manager] accept wrong callee OK\n";
+    }
+
+    {
+        calls::CallManager mgr(std::chrono::seconds(0));
+        mgr.create("alice", "bob");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        auto expired = mgr.expireRinging();
+        assert(expired.size() == 1);
+        std::cout << "[call_manager] expire ringing OK\n";
+    }
+
+    {
+        calls::CallManager mgr;
+        assert(!mgr.isBusy("alice"));
+        mgr.create("alice", "bob");
+        assert( mgr.isBusy("alice"));
+        assert( mgr.isBusy("bob"));
+        assert(!mgr.isBusy("carol"));
+        std::cout << "[call_manager] isBusy OK\n";
+    }
+
+    std::cout << "\n=== Routes (TURN credentials) ===\n";
+
+    {
+        api::TurnConfig cfg;
+        cfg.host          = "turn.example.com";
+        cfg.port_plain    = 3478;
+        cfg.port_tls      = 5349;
+        cfg.shared_secret = "mysecret";
+        cfg.ttl           = 3600;
+
+        auto rtc = api::generateRtcConfig("user1", cfg);
+        auto j   = nlohmann::json::parse(rtc);
+
+        assert(j.contains("iceServers"));
+        assert(j["iceServers"].is_array());
+        assert(!j["iceServers"].empty());
+
+        auto& ice = j["iceServers"][0];
+        assert(ice.contains("urls"));
+        assert(ice.contains("username"));
+        assert(ice.contains("credential"));
+
+        std::string username = ice["username"];
+        assert(username.find("user1") != std::string::npos);
+
+        std::string credential = ice["credential"];
+        assert(!credential.empty());
+
+        auto urls = ice["urls"];
+        assert(urls.size() == 2);
+        std::cout << "[routes] generateRtcConfig OK\n";
+    }
+
+    {
+        api::TurnConfig cfg;
+        cfg.host          = "turn.example.com";
+        cfg.shared_secret = "secret";
+        cfg.ttl           = 3600;
+
+        auto rtc1 = api::generateRtcConfig("user1", cfg);
+        auto rtc2 = api::generateRtcConfig("user2", cfg);
+        auto j1   = nlohmann::json::parse(rtc1);
+        auto j2   = nlohmann::json::parse(rtc2);
+
+        std::string u1 = j1["iceServers"][0]["username"];
+        std::string u2 = j2["iceServers"][0]["username"];
+        assert(u1 != u2);
+
+        std::string c1 = j1["iceServers"][0]["credential"];
+        std::string c2 = j2["iceServers"][0]["credential"];
+        assert(c1 != c2);
+        std::cout << "[routes] different users get different credentials OK\n";
+    }
+
+    {
+        api::TurnConfig cfg;
+        cfg.host          = "turn.example.com";
+        cfg.shared_secret = "secret";
+        cfg.ttl           = 3600;
+
+        auto rtc = api::generateRtcConfig("user1", cfg);
+        auto j   = nlohmann::json::parse(rtc);
+
+        std::string username   = j["iceServers"][0]["username"];
+        std::string credential = j["iceServers"][0]["credential"];
+
+        auto expected = crypto::base64_encode(
+            crypto::hmac_sha1(cfg.shared_secret, username));
+        assert(credential == expected);
+        std::cout << "[routes] HMAC-SHA1 credential correct OK\n";
     }
 
     std::cout << "\nAll backend tests passed\n";

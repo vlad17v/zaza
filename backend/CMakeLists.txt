@@ -3,7 +3,10 @@ add_library(backend
     auth/auth_service.cpp
     auth/user_store.cpp
     api/http_server.cpp
+    api/routes.cpp
     signaling/ws_server.cpp
+    signaling/router.cpp
+    calls/call_manager.cpp
 )
 
 target_include_directories(backend PUBLIC
