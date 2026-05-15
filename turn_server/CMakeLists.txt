@@ -7,6 +7,8 @@ add_executable(turn_server
     src/auth/nonce_manager.cpp
     src/auth/hmac_validator.cpp
     src/auth/long_term_cred.cpp
+    src/allocation/permission_table.cpp
+    src/allocation/allocation_manager.cpp
 )
 
 target_include_directories(turn_server PRIVATE
