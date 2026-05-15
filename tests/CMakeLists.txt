@@ -19,6 +19,8 @@ if(BUILD_TESTS_TURN)
     target_link_libraries(test_turn PRIVATE
         shared
         Boost::system
+        OpenSSL::SSL
+        OpenSSL::Crypto
     )
     target_sources(test_turn PRIVATE
         ${CMAKE_SOURCE_DIR}/turn_server/src/message/parser.cpp

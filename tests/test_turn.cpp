@@ -17,6 +17,10 @@
 #include <array>
 #include <thread>
 #include <chrono>
+#include <boost/asio/ssl.hpp>
+#include <openssl/ssl.h>
+#include <openssl/rand.h>
+namespace ssl = boost::asio::ssl;
 
 static std::array<uint8_t, 12> make_tid(uint8_t fill = 0xAB) {
     std::array<uint8_t, 12> tid;
@@ -1362,6 +1366,36 @@ int main() {
                            peer, alloc->relayedAddr);
         assert(!called);
         std::cout << "[alloc] handlePeerData no permission → silent drop OK\n";
+    }
+
+    std::cout << "\n=== SSL context factory ===\n";
+
+    {
+        ssl::context tls_ctx(ssl::context::tls_server);
+        tls_ctx.set_options(
+            ssl::context::default_workarounds |
+            ssl::context::no_sslv2           |
+            ssl::context::no_sslv3           |
+            ssl::context::no_tlsv1           |
+            ssl::context::no_tlsv1_1);
+        std::cout << "[ssl_ctx] TLS context created OK\n";
+    }
+
+    {
+        SSL_CTX* ctx = SSL_CTX_new(DTLS_server_method());
+        assert(ctx != nullptr);
+        SSL_CTX_set_cookie_generate_cb(ctx,
+            [](SSL*, uint8_t* cookie, uint32_t* len) -> int {
+                *len = 16;
+                RAND_bytes(cookie, 16);
+                return 1;
+            });
+        SSL_CTX_set_cookie_verify_cb(ctx,
+            [](SSL*, const uint8_t*, uint32_t len) -> int {
+                return len == 16 ? 1 : 0;
+            });
+        SSL_CTX_free(ctx);
+        std::cout << "[ssl_ctx] DTLS context created OK\n";
     }
 
     std::cout << "\nAll turn tests passed\n";
