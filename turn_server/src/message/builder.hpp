@@ -50,4 +50,8 @@ std::vector<uint8_t> make_data_indication(
 std::vector<uint8_t> make_channel_data(uint16_t                    channel_number,
                                         const std::vector<uint8_t>& data);
 
+std::vector<uint8_t> make_error(const std::array<uint8_t, 12>& tid,
+                                 uint16_t                        code,
+                                 const std::string&              reason);
+
 }

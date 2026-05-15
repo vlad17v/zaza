@@ -179,4 +179,12 @@ std::vector<uint8_t> make_channel_data(uint16_t                    channel_numbe
     return out;
 }
 
+std::vector<uint8_t> make_error(const std::array<uint8_t, 12>& tid,
+                                 uint16_t                        code,
+                                 const std::string&              reason) {
+    return MessageBuilder(Method::Allocate, MessageClass::ErrorResponse, tid)
+        .addErrorCode(code, reason)
+        .build();
+}
+
 }
