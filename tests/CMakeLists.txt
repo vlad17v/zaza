@@ -7,6 +7,7 @@ if(BUILD_TESTS_BACKEND)
     add_executable(test_backend test_backend.cpp)
     target_include_directories(test_backend PRIVATE
         ${CMAKE_SOURCE_DIR}/backend
+        ${CMAKE_SOURCE_DIR}/shared
     )
     target_link_libraries(test_backend PRIVATE shared backend)
 endif()
