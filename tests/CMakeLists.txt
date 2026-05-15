@@ -26,5 +26,7 @@ if(BUILD_TESTS_TURN)
         ${CMAKE_SOURCE_DIR}/turn_server/src/auth/nonce_manager.cpp
         ${CMAKE_SOURCE_DIR}/turn_server/src/auth/hmac_validator.cpp
         ${CMAKE_SOURCE_DIR}/turn_server/src/auth/long_term_cred.cpp
+        ${CMAKE_SOURCE_DIR}/turn_server/src/allocation/permission_table.cpp
+        ${CMAKE_SOURCE_DIR}/turn_server/src/allocation/allocation_manager.cpp
     )
 endif()

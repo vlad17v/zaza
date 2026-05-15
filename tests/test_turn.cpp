@@ -6,6 +6,9 @@
 #include "auth/long_term_cred.hpp"
 #include "crypto/sha256.hpp"
 #include "crypto/hmac.hpp"
+#include "allocation/allocation.hpp"
+#include "allocation/allocation_manager.hpp"
+#include "allocation/permission_table.hpp"
 
 #include <iostream>
 #include <cassert>
@@ -891,6 +894,474 @@ int main() {
         assert(lc.authenticate(msg, raw.data(), raw.size(), "")
                == turn_auth::AuthResult::Ok);
         std::cout << "[long_term_cred] correct MESSAGE-INTEGRITY-SHA256 OK\n";
+    }
+
+    std::cout << "\n=== isDeniedAddress ===\n";
+
+    {
+        assert( allocation::isDeniedAddress("10.0.0.1"));
+        assert( allocation::isDeniedAddress("10.255.255.255"));
+        assert( allocation::isDeniedAddress("172.16.0.1"));
+        assert( allocation::isDeniedAddress("172.31.255.255"));
+        assert( allocation::isDeniedAddress("192.168.0.1"));
+        assert( allocation::isDeniedAddress("192.168.255.255"));
+        assert( allocation::isDeniedAddress("127.0.0.1"));
+        assert(!allocation::isDeniedAddress("8.8.8.8"));
+        assert(!allocation::isDeniedAddress("192.0.2.1"));
+        assert(!allocation::isDeniedAddress("1.2.3.4"));
+        std::cout << "[denied_address] RFC 1918 + loopback OK\n";
+    }
+
+    std::cout << "\n=== AllocationManager ===\n";
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+
+        transport::Endpoint client{"192.0.2.1", 54321};
+        std::array<uint8_t, 12> tid; tid.fill(0x01);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport,
+                     {17, 0, 0, 0})
+            .build();
+
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+
+        auto resp = mgr.handleAllocate(msg, client, "user1", "realm");
+        message::TurnMessage resp_msg;
+        assert(message::parse(resp.data(), resp.size(), resp_msg)
+               == message::ParseResult::Ok);
+        assert(resp_msg.msg_class == message::MessageClass::SuccessResponse);
+        assert(resp_msg.findAttr(message::AttrType::XorRelayedAddress).has_value());
+        assert(resp_msg.findAttr(message::AttrType::XorMappedAddress).has_value());
+        assert(resp_msg.findAttr(message::AttrType::Lifetime).has_value());
+        std::cout << "[alloc] handle_allocate success OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.1", 54321};
+        std::array<uint8_t, 12> tid; tid.fill(0x02);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        tid.fill(0x03);
+        auto raw2 = message::MessageBuilder(
+                        message::Method::Allocate,
+                        message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg2;
+        message::parse(raw2.data(), raw2.size(), msg2);
+        auto resp = mgr.handleAllocate(msg2, client, "user1", "realm");
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::ErrorResponse);
+        auto err = resp_msg.findAttr(message::AttrType::ErrorCode);
+        assert(err.has_value());
+        assert(err->value[2] == 4 && err->value[3] == 37);
+        std::cout << "[alloc] duplicate 5-tuple → 437 OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.2", 12345};
+        std::array<uint8_t, 12> tid; tid.fill(0x04);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        auto resp = mgr.handleAllocate(msg, client, "user1", "realm");
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::ErrorResponse);
+        auto err = resp_msg.findAttr(message::AttrType::ErrorCode);
+        assert(err.has_value());
+        assert(err->value[2] == 4 && err->value[3] == 0);
+        std::cout << "[alloc] missing REQUESTED-TRANSPORT → 400 OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.3", 11111};
+        std::array<uint8_t, 12> tid; tid.fill(0x05);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        tid.fill(0x06);
+        auto raw2 = message::MessageBuilder(
+                        message::Method::Refresh,
+                        message::MessageClass::Request, tid)
+            .addLifetime(1200)
+            .build();
+        message::TurnMessage msg2;
+        message::parse(raw2.data(), raw2.size(), msg2);
+        auto resp = mgr.handleRefresh(msg2, client, "user1");
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::SuccessResponse);
+        auto lt = resp_msg.findAttr(message::AttrType::Lifetime);
+        assert(lt.has_value());
+        uint32_t lifetime =
+            (static_cast<uint32_t>(lt->value[0]) << 24) |
+            (static_cast<uint32_t>(lt->value[1]) << 16) |
+            (static_cast<uint32_t>(lt->value[2]) <<  8) |
+             static_cast<uint32_t>(lt->value[3]);
+        assert(lifetime == 1200);
+        std::cout << "[alloc] handle_refresh update OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.4", 22222};
+        std::array<uint8_t, 12> tid; tid.fill(0x07);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+        assert(mgr.findByClient(client) != nullptr);
+
+        tid.fill(0x08);
+        auto raw2 = message::MessageBuilder(
+                        message::Method::Refresh,
+                        message::MessageClass::Request, tid)
+            .addLifetime(0)
+            .build();
+        message::TurnMessage msg2;
+        message::parse(raw2.data(), raw2.size(), msg2);
+        auto resp = mgr.handleRefresh(msg2, client, "user1");
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::SuccessResponse);
+        assert(mgr.findByClient(client) == nullptr);
+        std::cout << "[alloc] handle_refresh delete (LIFETIME=0) OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.5", 33333};
+        std::array<uint8_t, 12> tid; tid.fill(0x09);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        uint32_t peer_ip_xor = 0x08080808 ^ message::kMagicCookie;
+        uint16_t peer_port_xor = 12345 ^ static_cast<uint16_t>(message::kMagicCookie >> 16);
+        std::vector<uint8_t> peer_addr_attr = {
+            0x00, 0x01,
+            static_cast<uint8_t>(peer_port_xor >> 8),
+            static_cast<uint8_t>(peer_port_xor & 0xFF),
+            static_cast<uint8_t>(peer_ip_xor >> 24),
+            static_cast<uint8_t>((peer_ip_xor >> 16) & 0xFF),
+            static_cast<uint8_t>((peer_ip_xor >>  8) & 0xFF),
+            static_cast<uint8_t>(peer_ip_xor & 0xFF),
+        };
+
+        tid.fill(0x0A);
+        auto raw2 = message::MessageBuilder(
+                        message::Method::CreatePermission,
+                        message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::XorPeerAddress, peer_addr_attr)
+            .build();
+        message::TurnMessage msg2;
+        message::parse(raw2.data(), raw2.size(), msg2);
+        auto resp = mgr.handleCreatePermission(msg2, client);
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::SuccessResponse);
+
+        auto alloc = mgr.findByClient(client);
+        assert(alloc != nullptr);
+        assert(alloc->hasPermission("8.8.8.8"));
+        std::cout << "[alloc] handle_create_permission OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.6", 44444};
+        std::array<uint8_t, 12> tid; tid.fill(0x0B);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        uint32_t peer_ip_xor = 0x0A000001 ^ message::kMagicCookie;
+        uint16_t peer_port_xor = 80 ^ static_cast<uint16_t>(message::kMagicCookie >> 16);
+        std::vector<uint8_t> peer_addr_attr = {
+            0x00, 0x01,
+            static_cast<uint8_t>(peer_port_xor >> 8),
+            static_cast<uint8_t>(peer_port_xor & 0xFF),
+            static_cast<uint8_t>(peer_ip_xor >> 24),
+            static_cast<uint8_t>((peer_ip_xor >> 16) & 0xFF),
+            static_cast<uint8_t>((peer_ip_xor >>  8) & 0xFF),
+            static_cast<uint8_t>(peer_ip_xor & 0xFF),
+        };
+
+        tid.fill(0x0C);
+        auto raw2 = message::MessageBuilder(
+                        message::Method::CreatePermission,
+                        message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::XorPeerAddress, peer_addr_attr)
+            .build();
+        message::TurnMessage msg2;
+        message::parse(raw2.data(), raw2.size(), msg2);
+        auto resp = mgr.handleCreatePermission(msg2, client);
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::ErrorResponse);
+        auto err = resp_msg.findAttr(message::AttrType::ErrorCode);
+        assert(err.has_value());
+        assert(err->value[2] == 4 && err->value[3] == 3);
+        std::cout << "[alloc] create_permission RFC 1918 → 403 OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.7", 55555};
+        std::array<uint8_t, 12> tid; tid.fill(0x0D);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        uint32_t peer_ip_xor   = 0x08080808 ^ message::kMagicCookie;
+        uint16_t peer_port_xor = 9000 ^ static_cast<uint16_t>(message::kMagicCookie >> 16);
+        std::vector<uint8_t> peer_addr_attr = {
+            0x00, 0x01,
+            static_cast<uint8_t>(peer_port_xor >> 8),
+            static_cast<uint8_t>(peer_port_xor & 0xFF),
+            static_cast<uint8_t>(peer_ip_xor >> 24),
+            static_cast<uint8_t>((peer_ip_xor >> 16) & 0xFF),
+            static_cast<uint8_t>((peer_ip_xor >>  8) & 0xFF),
+            static_cast<uint8_t>(peer_ip_xor & 0xFF),
+        };
+
+        uint16_t ch_num = 0x4001;
+        uint16_t ch_num_xor = 0;
+        std::vector<uint8_t> ch_attr = {
+            static_cast<uint8_t>(ch_num >> 8),
+            static_cast<uint8_t>(ch_num & 0xFF),
+            0x00, 0x00
+        };
+        (void)ch_num_xor;
+
+        tid.fill(0x0E);
+        auto raw2 = message::MessageBuilder(
+                        message::Method::ChannelBind,
+                        message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::ChannelNumber,   ch_attr)
+            .addAttr(message::AttrType::XorPeerAddress,  peer_addr_attr)
+            .build();
+        message::TurnMessage msg2;
+        message::parse(raw2.data(), raw2.size(), msg2);
+        auto resp = mgr.handleChannelBind(msg2, client);
+
+        message::TurnMessage resp_msg;
+        message::parse(resp.data(), resp.size(), resp_msg);
+        assert(resp_msg.msg_class == message::MessageClass::SuccessResponse);
+
+        auto alloc = mgr.findByClient(client);
+        assert(alloc != nullptr);
+        assert(alloc->findChannelByNumber(0x4001).has_value());
+        assert(alloc->hasPermission("8.8.8.8"));
+        std::cout << "[alloc] handle_channel_bind OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.8", 60000};
+        std::array<uint8_t, 12> tid; tid.fill(0x0F);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        std::vector<uint8_t> received_data;
+        transport::Endpoint  received_from;
+        mgr.setClientSendCallback([&](const std::vector<uint8_t>& data,
+                                      const transport::Endpoint&  to) {
+            received_data = data;
+            received_from = to;
+        });
+
+        auto alloc = mgr.findByClient(client);
+        assert(alloc != nullptr);
+
+        allocation::Permission perm;
+        perm.address   = "8.8.8.8";
+        perm.expiresAt = allocation::Clock::now() +
+                         std::chrono::seconds(300);
+        alloc->permissions["8.8.8.8"] = perm;
+
+        transport::Endpoint peer{"8.8.8.8", 12345};
+        std::vector<uint8_t> payload = {0x01, 0x02, 0x03};
+        mgr.handlePeerData(payload.data(), payload.size(),
+                           peer, alloc->relayedAddr);
+
+        assert(!received_data.empty());
+        assert(received_from.address == client.address);
+        assert(received_from.port    == client.port);
+        std::cout << "[alloc] handlePeerData → Data indication OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.9", 61000};
+        std::array<uint8_t, 12> tid; tid.fill(0x10);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        auto alloc = mgr.findByClient(client);
+
+        allocation::Permission perm;
+        perm.address   = "8.8.8.8";
+        perm.expiresAt = allocation::Clock::now() +
+                         std::chrono::seconds(300);
+        alloc->permissions["8.8.8.8"] = perm;
+
+        allocation::ChannelBinding ch;
+        ch.channelNumber = 0x4002;
+        ch.peer          = {"8.8.8.8", 12345};
+        ch.expiresAt     = allocation::Clock::now() +
+                           std::chrono::seconds(600);
+        alloc->channels[0x4002] = ch;
+
+        std::vector<uint8_t> received_data;
+        mgr.setClientSendCallback([&](const std::vector<uint8_t>& data,
+                                      const transport::Endpoint&) {
+            received_data = data;
+        });
+
+        transport::Endpoint peer{"8.8.8.8", 12345};
+        std::vector<uint8_t> payload = {0xDE, 0xAD};
+        mgr.handlePeerData(payload.data(), payload.size(),
+                           peer, alloc->relayedAddr);
+
+        assert(!received_data.empty());
+        assert((received_data[0] & 0xC0) == 0x40);
+        uint16_t ch_num = (static_cast<uint16_t>(received_data[0]) << 8) |
+                           received_data[1];
+        assert(ch_num == 0x4002);
+        std::cout << "[alloc] handlePeerData → ChannelData OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.10", 62000};
+
+        bool called = false;
+        mgr.setClientSendCallback([&](const std::vector<uint8_t>&,
+                                      const transport::Endpoint&) {
+            called = true;
+        });
+
+        transport::Endpoint peer{"8.8.8.8", 9999};
+        transport::Endpoint relay{"127.0.0.1", 50000};
+        std::vector<uint8_t> data = {0x01};
+        mgr.handlePeerData(data.data(), data.size(), peer, relay);
+        assert(!called);
+        std::cout << "[alloc] handlePeerData no allocation → silent drop OK\n";
+    }
+
+    {
+        asio::io_context ioc;
+        allocation::AllocationManager mgr(ioc, "127.0.0.1", 49152, 65535);
+        transport::Endpoint client{"192.0.2.11", 63000};
+        std::array<uint8_t, 12> tid; tid.fill(0x11);
+
+        auto raw = message::MessageBuilder(
+                       message::Method::Allocate,
+                       message::MessageClass::Request, tid)
+            .addAttr(message::AttrType::RequestedTransport, {17, 0, 0, 0})
+            .build();
+        message::TurnMessage msg;
+        message::parse(raw.data(), raw.size(), msg);
+        mgr.handleAllocate(msg, client, "user1", "realm");
+
+        auto alloc = mgr.findByClient(client);
+
+        bool called = false;
+        mgr.setClientSendCallback([&](const std::vector<uint8_t>&,
+                                      const transport::Endpoint&) {
+            called = true;
+        });
+
+        transport::Endpoint peer{"8.8.8.8", 9999};
+        std::vector<uint8_t> data = {0x01};
+        mgr.handlePeerData(data.data(), data.size(),
+                           peer, alloc->relayedAddr);
+        assert(!called);
+        std::cout << "[alloc] handlePeerData no permission → silent drop OK\n";
     }
 
     std::cout << "\nAll turn tests passed\n";
