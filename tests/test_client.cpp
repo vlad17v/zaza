@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <cassert>
+#include <fstream>
 
 int main() {
     std::cout << "=== Parser ===\n";
@@ -550,6 +551,128 @@ int main() {
         h.handle(R"({"no_type": "here"})");
         h.handle(R"({"type": "unknown.event"})");
         std::cout << "[msg_handler] invalid messages no crash OK\n";
+    }
+
+    std::cout << "\n=== WebRTC JSON formats ===\n";
+
+    {
+        session::Session s;
+        s.call.callId = "abc123";
+
+        nlohmann::json j = {
+            {"type",   "webrtc.offer"},
+            {"callId", s.call.callId},
+            {"sdp",    "v=0..."}
+        };
+        assert(j["type"]   == "webrtc.offer");
+        assert(j["callId"] == "abc123");
+        assert(j["sdp"]    == "v=0...");
+        auto parsed = nlohmann::json::parse(j.dump());
+        assert(parsed["type"] == "webrtc.offer");
+        std::cout << "[webrtc] offer JSON format OK\n";
+    }
+
+    {
+        session::Session s;
+        s.call.callId = "abc123";
+
+        nlohmann::json j = {
+            {"type",   "webrtc.answer"},
+            {"callId", s.call.callId},
+            {"sdp",    "v=0 answer"}
+        };
+        assert(j["type"]   == "webrtc.answer");
+        assert(j["callId"] == "abc123");
+        assert(j["sdp"]    == "v=0 answer");
+        auto parsed = nlohmann::json::parse(j.dump());
+        assert(parsed["type"] == "webrtc.answer");
+        std::cout << "[webrtc] answer JSON format OK\n";
+    }
+
+    {
+        session::Session s;
+        s.call.callId = "abc123";
+
+        nlohmann::json j = {
+            {"type",       "webrtc.ice"},
+            {"callId",     s.call.callId},
+            {"candidate",  "candidate:1234 1 UDP 2122252543 192.168.1.2 54321 typ host"},
+            {"mid",        "audio"},
+            {"mlineindex", 0}
+        };
+        assert(j["type"]       == "webrtc.ice");
+        assert(j["callId"]     == "abc123");
+        assert(j["mid"]        == "audio");
+        assert(j["mlineindex"] == 0);
+        assert(!j["candidate"].get<std::string>().empty());
+        auto parsed = nlohmann::json::parse(j.dump());
+        assert(parsed["type"] == "webrtc.ice");
+        std::cout << "[webrtc] ICE JSON format OK\n";
+    }
+
+    {
+        nlohmann::json j = {
+            {"type",   "webrtc.ice"},
+            {"callId", "abc123"},
+            {"candidate",  ""},
+            {"mid",        ""},
+            {"mlineindex", 0}
+        };
+        assert(j["candidate"].get<std::string>().empty());
+        assert(j["mlineindex"] == 0);
+        std::cout << "[webrtc] ICE empty candidate OK\n";
+    }
+
+    {
+        nlohmann::json rtc = {
+            {"type",   "rtc.config"},
+            {"callId", "abc123"},
+            {"iceServers", nlohmann::json::array({
+                {
+                    {"urls", {"turn:host:3478", "turns:host:5349"}},
+                    {"username",   "1715510400:user1"},
+                    {"credential", "abc123=="}
+                }
+            })}
+        };
+        assert(rtc["type"]   == "rtc.config");
+        assert(rtc["callId"] == "abc123");
+        assert(rtc["iceServers"].is_array());
+        assert(rtc["iceServers"].size() == 1);
+        auto& server = rtc["iceServers"][0];
+        assert(server["urls"].size() == 2);
+        assert(server["urls"][0] == "turn:host:3478");
+        assert(server["urls"][1] == "turns:host:5349");
+        assert(server["username"].get<std::string>().find(":") != std::string::npos);
+        assert(!server["credential"].get<std::string>().empty());
+        std::cout << "[webrtc] rtc.config JSON format OK\n";
+    }
+
+    std::cout << "\n=== Protocol JSON files ===\n";
+
+    {
+        std::vector<std::string> files = {
+            "../protocol/signaling.json",
+            "../protocol/rtc_config.json",
+            "../protocol/turn_credentials.json",
+            "../protocol/error_codes.json",
+            "../protocol/auth.json"
+        };
+
+        for (auto& path : files) {
+            std::ifstream f(path);
+            if (!f.is_open()) {
+                std::cout << "[protocol] SKIP (not found): " << path << "\n";
+                continue;
+            }
+            try {
+                auto j = nlohmann::json::parse(f);
+                assert(j.is_object());
+                std::cout << "[protocol] valid JSON: " << path << " OK\n";
+            } catch (...) {
+                assert(false && "invalid JSON in protocol file");
+            }
+        }
     }
 
     std::cout << "\nAll client tests passed\n";
