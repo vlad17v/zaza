@@ -6,7 +6,11 @@
 #include "rtc/peer_connection.hpp"
 #include "rtc/sdp_handler.hpp"
 #include "rtc/ice_handler.hpp"
+#include "audio/capture.hpp"
+#include "audio/playback.hpp"
+#include "audio/wav.hpp"
 
+#include <nlohmann/json.hpp>
 #include <csignal>
 #include <iostream>
 #include <memory>
@@ -41,23 +45,92 @@ int main() {
     std::unique_ptr<rtc_client::PeerConnection> pc;
     std::unique_ptr<rtc_client::SdpHandler>     sdp_handler;
     std::unique_ptr<rtc_client::IceHandler>     ice_handler;
+    std::unique_ptr<audio::Capture>             capture;
+    std::unique_ptr<audio::Playback>            playback;
+
+    auto stopAudio = [&]() {
+        if (capture)  capture->stop();
+        if (playback) playback->stop();
+    };
 
     auto initRtc = [&]() {
-        pc          = std::make_unique<rtc_client::PeerConnection>(session, repl);
+        pc = std::make_unique<rtc_client::PeerConnection>(session, repl);
         pc->init();
-        sdp_handler = std::make_unique<rtc_client::SdpHandler>(*pc, session, repl, ws_send);
-        ice_handler = std::make_unique<rtc_client::IceHandler> (*pc, session, repl, ws_send);
 
-        handler.onOffer ([&](const std::string& sdp) { sdp_handler->handleOffer(sdp);  });
-        handler.onAnswer([&](const std::string& sdp) { sdp_handler->handleAnswer(sdp); });
-        handler.onIce   ([&](const std::string& c, const std::string& m, int ml) {
+        sdp_handler = std::make_unique<rtc_client::SdpHandler>(
+            *pc, session, repl, ws_send);
+        ice_handler = std::make_unique<rtc_client::IceHandler>(
+            *pc, session, repl, ws_send);
+
+        handler.onOffer([&](const std::string& sdp) {
+            sdp_handler->handleOffer(sdp);
+        });
+        handler.onAnswer([&](const std::string& sdp) {
+            sdp_handler->handleAnswer(sdp);
+        });
+        handler.onIce([&](const std::string& c,
+                          const std::string& m,
+                          int ml) {
             ice_handler->handleRemoteCandidate(c, m, ml);
+        });
+
+        // Аудио захват → WebRTC track
+        capture = std::make_unique<audio::Capture>();
+        capture->start([&](const int16_t* data, size_t count) {
+            if (pc && pc->audioTrack()) {
+                auto bytes = reinterpret_cast<const std::byte*>(data);
+                pc->audioTrack()->send(
+                    rtc::binary(bytes, bytes + count * sizeof(int16_t)));
+            }
+        });
+
+        // WebRTC track → воспроизведение
+        playback = std::make_unique<audio::Playback>();
+        pc->onTrack([&](std::shared_ptr<rtc::Track> track) {
+            playback->start();
+            track->onMessage([&](rtc::message_variant data) {
+                if (auto* bin = std::get_if<rtc::binary>(&data)) {
+                    auto* samples = reinterpret_cast<const int16_t*>(
+                        bin->data());
+                    playback->write(samples,
+                                    bin->size() / sizeof(int16_t));
+                }
+            });
         });
     };
 
-    auto original_on_message = [&](const std::string& msg) {
-        handler.handle(msg);
-    };
+    // record/stop — управление записью через capture
+    repl.commands().setCaptureCallback(
+        [&](bool start, const std::string& filename) {
+            if (!capture) return;
+            if (start) {
+                capture->startRecording();
+            } else {
+                auto samples = capture->stopRecording();
+                try {
+                    audio::writeWav(filename, samples);
+                    repl.print("[audio] saved to " + filename);
+                } catch (const audio::WavError& e) {
+                    repl.print(std::string("[audio] save error: ") + e.what());
+                }
+            }
+        });
+
+    // sendfile — прочитать WAV и отправить через playback
+    repl.commands().setSendfileCallback([&](const std::string& filename) {
+        try {
+            audio::WavHeader header;
+            auto samples = audio::readWav(filename, header);
+            if (playback)
+                playback->playFile(samples);
+            repl.print("[audio] sending " + filename
+                       + " (" + std::to_string(samples.size()) + " samples)");
+        } catch (const audio::WavError& e) {
+            repl.print(std::string("[audio] file error: ") + e.what());
+        }
+    });
+
+    repl.commands().setWsSend(ws_send);
 
     ws_client.onMessage([&](const std::string& msg) {
         try {
@@ -65,9 +138,17 @@ int main() {
             if (j.value("type", "") == "rtc.config") {
                 handler.handle(msg);
                 initRtc();
-
                 if (session.call.state == session::AppState::Calling)
                     sdp_handler->startCall();
+                return;
+            }
+            if (j.value("type", "") == "call.ended" ||
+                j.value("type", "") == "call.failed") {
+                handler.handle(msg);
+                stopAudio();
+                pc.reset();
+                sdp_handler.reset();
+                ice_handler.reset();
                 return;
             }
         } catch (...) {}
@@ -79,8 +160,6 @@ int main() {
         repl.print("[ws] disconnected, reconnecting...");
     });
 
-    repl.commands().setWsSend(ws_send);
-
     repl.setOnLogin([&ws_client, &session]() {
         try {
             ws_client.connect(session.jwt);
@@ -91,6 +170,7 @@ int main() {
 
     repl.run();
 
+    stopAudio();
     if (pc) pc->close();
 
     return 0;
