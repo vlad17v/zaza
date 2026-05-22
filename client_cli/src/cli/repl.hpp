@@ -22,6 +22,11 @@ public:
 
     void requestQuit();
 
+    using LoginCallback = std::function<void()>;
+
+    void setOnLogin(LoginCallback cb);
+    Commands& commands();
+
 private:
     void processLine(const std::string& line);
     void prompt();
@@ -30,6 +35,8 @@ private:
     Commands          commands_;
     std::mutex        output_mutex_;
     std::atomic<bool> quit_{false};
+
+    LoginCallback on_login_;
 };
 
 }
