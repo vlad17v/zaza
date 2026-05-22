@@ -112,16 +112,17 @@ std::optional<CallSession> CallManager::find(
     return it->second;
 }
 
-std::vector<std::string> CallManager::expireRinging() {
+std::vector<CallSession> CallManager::expireRinging() {
     std::lock_guard<std::mutex> lock(mutex_);
     auto now = std::chrono::steady_clock::now();
-    std::vector<std::string> expired;
+    std::vector<CallSession> expired;
 
     for (auto it = sessions_.begin(); it != sessions_.end(); ) {
         auto& s = it->second;
         if (s.state == CallState::Ringing &&
             now - s.createdAt > ring_timeout_) {
-            expired.push_back(s.callId);
+            s.state = CallState::Ended;
+            expired.push_back(s);
             it = sessions_.erase(it);
         } else {
             ++it;

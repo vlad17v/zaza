@@ -178,4 +178,20 @@ void Router::onWebrtcRelay(const std::string& userId,
     ws_.send(otherId, msg.dump());
 }
 
+void Router::checkExpired() {
+    auto expired = call_manager_.expireRinging();
+    for (auto& session : expired) {
+        sendJson(session.callerId, {
+            {"type",   "call.failed"},
+            {"callId", session.callId},
+            {"reason", "timeout"}
+        });
+        sendJson(session.calleeId, {
+            {"type",   "call.failed"},
+            {"callId", session.callId},
+            {"reason", "timeout"}
+        });
+    }
+}
+
 }

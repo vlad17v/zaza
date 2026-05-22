@@ -45,7 +45,7 @@ public:
 
     std::optional<CallSession> find(const std::string& callId) const;
 
-    std::vector<std::string> expireRinging();
+    std::vector<CallSession> expireRinging();
 
     bool isBusy(const std::string& userId) const;
 
