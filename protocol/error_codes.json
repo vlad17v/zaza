@@ -1,0 +1,44 @@
+{
+  "description": "Коды ошибок используемые в системе",
+  "websocket_errors": {
+    "format": {
+      "type": "error",
+      "message": "string"
+    },
+    "messages": {
+      "invalid json": "входящее сообщение не является валидным JSON",
+      "missing type": "поле type отсутствует в сообщении",
+      "unknown type": "неизвестный тип сообщения",
+      "missing callId": "поле callId отсутствует",
+      "missing to": "поле to отсутствует в call.create",
+      "call not found": "звонок с указанным callId не найден",
+      "caller is busy": "звонящий уже участвует в другом звонке",
+      "callee is busy": "вызываемый уже участвует в другом звонке",
+      "wrong callee": "пользователь не является участником этого звонка",
+      "call not ringing": "звонок не находится в состоянии ожидания",
+      "user not in call": "пользователь не является участником звонка"
+    }
+  },
+  "http_errors": {
+    "400": "Bad Request — отсутствуют обязательные поля",
+    "401": "Unauthorized — отсутствует или невалидный JWT",
+    "401_expired": "Unauthorized — JWT истёк",
+    "409": "Conflict — пользователь уже существует"
+  },
+  "turn_errors": {
+    "400": "Bad Request — отсутствует REQUESTED-TRANSPORT или невалидный атрибут",
+    "401": "Unauthorized — отсутствуют credentials",
+    "403": "Forbidden — relay к RFC 1918 адресу запрещён",
+    "437": "Allocation Mismatch — 5-tuple уже занят",
+    "438": "Stale Nonce — nonce истёк",
+    "441": "Wrong Credentials — username не совпадает с аллокацией",
+    "442": "Unsupported Transport Protocol — только UDP разрешён",
+    "486": "Allocation Quota Reached — превышен лимит аллокаций на пользователя",
+    "508": "Insufficient Capacity — нет свободных relay портов"
+  },
+  "call_states": {
+    "Ringing": "звонок создан, ожидает принятия (таймаут 30 сек)",
+    "Active": "звонок принят, WebRTC negotiation идёт или завершена",
+    "Ended": "звонок завершён"
+  }
+}

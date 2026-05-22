@@ -1,0 +1,33 @@
+{
+  "description": "WebRTC конфигурация — отправляется backend клиенту при call.accept",
+  "notes": [
+    "Содержит только TURN серверы — STUN не используется",
+    "Клиент использует TransportPolicy::Relay — только relay кандидаты",
+    "Credentials генерируются отдельно для каждого участника звонка",
+    "TTL credentials — 3600 сек (продакшн: 900 сек)"
+  ],
+  "example": {
+    "type": "rtc.config",
+    "callId": "abc123",
+    "iceServers": [
+      {
+        "urls": [
+          "turn:turn.example.com:3478",
+          "turns:turn.example.com:5349"
+        ],
+        "username": "1715510400:user1",
+        "credential": "<base64_HMAC_SHA1>"
+      }
+    ]
+  },
+  "fields": {
+    "iceServers": {
+      "type": "array",
+      "items": {
+        "urls": "array of strings — turn: и turns: URL",
+        "username": "string — формат: <expiry_timestamp>:<userId>",
+        "credential": "string — base64(HMAC-SHA1(shared_secret, username))"
+      }
+    }
+  }
+}

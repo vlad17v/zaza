@@ -1,0 +1,143 @@
+{
+  "transport": "WebSocket",
+  "connection": "wss://backend.host/ws?token=<JWT>",
+  "format": {
+    "type": "string (required)",
+    "callId": "string (optional)",
+    "from": "string (optional)",
+    "to": "string (optional)",
+    "payload": "object (optional)"
+  },
+  "messages": {
+    "client_to_server": {
+      "call.create": {
+        "description": "Инициировать звонок",
+        "fields": {
+          "type": "call.create",
+          "to": "string — userId получателя"
+        }
+      },
+      "call.accept": {
+        "description": "Принять входящий звонок",
+        "fields": {
+          "type": "call.accept",
+          "callId": "string"
+        }
+      },
+      "call.reject": {
+        "description": "Отклонить входящий звонок",
+        "fields": {
+          "type": "call.reject",
+          "callId": "string"
+        }
+      },
+      "call.hangup": {
+        "description": "Завершить звонок",
+        "fields": {
+          "type": "call.hangup",
+          "callId": "string"
+        }
+      },
+      "webrtc.offer": {
+        "description": "SDP offer от caller",
+        "fields": {
+          "type": "webrtc.offer",
+          "callId": "string",
+          "sdp": "string — SDP offer"
+        }
+      },
+      "webrtc.answer": {
+        "description": "SDP answer от callee",
+        "fields": {
+          "type": "webrtc.answer",
+          "callId": "string",
+          "sdp": "string — SDP answer"
+        }
+      },
+      "webrtc.ice": {
+        "description": "ICE кандидат",
+        "fields": {
+          "type": "webrtc.ice",
+          "callId": "string",
+          "candidate": "string",
+          "mid": "string",
+          "mlineindex": "integer"
+        }
+      }
+    },
+    "server_to_client": {
+      "call.created": {
+        "description": "Звонок создан, подтверждение caller",
+        "fields": {
+          "type": "call.created",
+          "callId": "string"
+        }
+      },
+      "call.incoming": {
+        "description": "Входящий звонок для callee",
+        "fields": {
+          "type": "call.incoming",
+          "callId": "string",
+          "from": "string — userId звонящего"
+        }
+      },
+      "call.ended": {
+        "description": "Звонок завершён",
+        "fields": {
+          "type": "call.ended",
+          "callId": "string",
+          "reason": "string — hangup | rejected"
+        }
+      },
+      "call.failed": {
+        "description": "Звонок не состоялся",
+        "fields": {
+          "type": "call.failed",
+          "callId": "string",
+          "reason": "string — timeout | error"
+        }
+      },
+      "rtc.config": {
+        "description": "WebRTC конфигурация — отправляется обоим при call.accept",
+        "fields": {
+          "type": "rtc.config",
+          "callId": "string",
+          "iceServers": "array — см. rtc_config.json"
+        }
+      },
+      "webrtc.offer": {
+        "description": "Relay SDP offer к callee",
+        "fields": {
+          "type": "webrtc.offer",
+          "callId": "string",
+          "sdp": "string"
+        }
+      },
+      "webrtc.answer": {
+        "description": "Relay SDP answer к caller",
+        "fields": {
+          "type": "webrtc.answer",
+          "callId": "string",
+          "sdp": "string"
+        }
+      },
+      "webrtc.ice": {
+        "description": "Relay ICE кандидат",
+        "fields": {
+          "type": "webrtc.ice",
+          "callId": "string",
+          "candidate": "string",
+          "mid": "string",
+          "mlineindex": "integer"
+        }
+      },
+      "error": {
+        "description": "Ошибка сервера",
+        "fields": {
+          "type": "error",
+          "message": "string"
+        }
+      }
+    }
+  }
+}
