@@ -150,6 +150,8 @@ CommandResult Commands::record(const std::vector<std::string>& args) {
 
     session_.record.active   = true;
     session_.record.filename = filename;
+
+    if (capture_cb_) capture_cb_(true, "");
     return {true, "recording to " + filename};
 }
 
@@ -159,6 +161,8 @@ CommandResult Commands::stop(const std::vector<std::string>& args) {
 
     auto filename = session_.record.filename;
     session_.record = session::RecordContext{};
+
+    if (capture_cb_) capture_cb_(false, filename);
     return {true, "saved to " + filename};
 }
 
@@ -173,6 +177,7 @@ CommandResult Commands::sendfile(const std::vector<std::string>& args) {
         filename.substr(filename.size() - 4) != ".wav")
         return {false, "only .wav format supported"};
 
+    if (sendfile_cb_) sendfile_cb_(filename);
     return {true, "sending " + filename};
 }
 

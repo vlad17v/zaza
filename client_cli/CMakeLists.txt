@@ -22,6 +22,9 @@ add_executable(client_cli
     src/rtc/peer_connection.cpp
     src/rtc/sdp_handler.cpp
     src/rtc/ice_handler.cpp
+    src/audio/wav.cpp
+    src/audio/capture.cpp
+    src/audio/playback.cpp
 )
 
 target_include_directories(client_cli PRIVATE
