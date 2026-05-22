@@ -2,6 +2,8 @@
 #include "cli/commands.hpp"
 #include "session/session.hpp"
 #include "signaling/message_handler.hpp"
+#include "audio/wav.hpp"
+#include "audio/jitter_buffer.hpp"
 
 #include <iostream>
 #include <cassert>
@@ -673,6 +675,120 @@ int main() {
                 assert(false && "invalid JSON in protocol file");
             }
         }
+    }
+
+    std::cout << "\n=== WAV ===\n";
+
+    {
+        std::vector<int16_t> samples(48000, 0);
+        for (size_t i = 0; i < samples.size(); ++i)
+            samples[i] = static_cast<int16_t>(i % 32767);
+
+        audio::writeWav("/tmp/test.wav", samples);
+
+        audio::WavHeader header;
+        auto read = audio::readWav("/tmp/test.wav", header);
+
+        assert(read.size()          == samples.size());
+        assert(header.sampleRate    == 48000);
+        assert(header.numChannels   == 1);
+        assert(header.bitsPerSample == 16);
+        assert(read == samples);
+        std::cout << "[wav] write/read round-trip OK\n";
+    }
+
+    {
+        std::vector<int16_t> empty;
+        audio::writeWav("/tmp/test_empty.wav", empty);
+        audio::WavHeader header;
+        auto read = audio::readWav("/tmp/test_empty.wav", header);
+        assert(read.empty());
+        assert(header.numSamples == 0);
+        std::cout << "[wav] empty file OK\n";
+    }
+
+    {
+        try {
+            audio::WavHeader header;
+            audio::readWav("/tmp/nonexistent.wav", header);
+            assert(false);
+        } catch (const audio::WavError&) {}
+        std::cout << "[wav] nonexistent file OK\n";
+    }
+
+    {
+        std::ofstream bad("/tmp/bad.wav");
+        bad << "not a wav file";
+        bad.close();
+        try {
+            audio::WavHeader header;
+            audio::readWav("/tmp/bad.wav", header);
+            assert(false);
+        } catch (const audio::WavError&) {}
+        std::cout << "[wav] bad file format OK\n";
+    }
+
+    std::cout << "\n=== JitterBuffer ===\n";
+
+    {
+        audio::JitterBuffer jb(50, 48000);
+        assert(jb.available() == 0);
+
+        std::vector<int16_t> in = {1, 2, 3, 4, 5};
+        jb.write(in.data(), in.size());
+        assert(jb.available() == 5);
+
+        std::vector<int16_t> out(5, 0);
+        jb.read(out.data(), 5);
+        assert(out == in);
+        assert(jb.available() == 0);
+        std::cout << "[jitter] write/read OK\n";
+    }
+
+    {
+        audio::JitterBuffer jb(50, 48000);
+        std::vector<int16_t> out(10, 99);
+        jb.read(out.data(), 10);
+        for (auto s : out)
+            assert(s == 0);
+        std::cout << "[jitter] underrun silence OK\n";
+    }
+
+    {
+        audio::JitterBuffer jb(50, 48000);
+        std::vector<int16_t> in = {1, 2, 3};
+        jb.write(in.data(), in.size());
+
+        std::vector<int16_t> out(5, 99);
+        jb.read(out.data(), 5);
+        assert(out[0] == 1);
+        assert(out[1] == 2);
+        assert(out[2] == 3);
+        assert(out[3] == 0);
+        assert(out[4] == 0);
+        std::cout << "[jitter] partial read with silence OK\n";
+    }
+
+    {
+        audio::JitterBuffer jb(50, 48000);
+        std::vector<int16_t> in = {10, 20, 30};
+        jb.write(in.data(), in.size());
+        jb.clear();
+        assert(jb.available() == 0);
+        std::vector<int16_t> out(3, 99);
+        jb.read(out.data(), 3);
+        for (auto s : out) assert(s == 0);
+        std::cout << "[jitter] clear OK\n";
+    }
+
+    {
+        audio::JitterBuffer jb(1, 48000);
+        size_t cap = 48000 * 1 / 1000;
+
+        std::vector<int16_t> big(cap + 100, 42);
+        jb.write(big.data(), big.size());
+        assert(jb.available() == cap);
+        std::cout << "[jitter] overflow protection OK\n";
     }
 
     std::cout << "\nAll client tests passed\n";
