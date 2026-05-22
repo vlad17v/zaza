@@ -39,6 +39,8 @@ private:
     void sendError(const std::string& userId,
                    const std::string& reason);
 
+    void checkExpired();
+
     WsServer&           ws_;
     calls::CallManager& call_manager_;
     RtcConfigGenerator  rtc_config_gen_;

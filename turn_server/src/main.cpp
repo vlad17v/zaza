@@ -29,7 +29,6 @@ int main(int argc, char* argv[]) {
 
     auto tls_ctx  = transport::makeTlsContext(cert_file, key_file);
 
-    // DTLS_CTX владеем вручную
     SSL_CTX* dtls_ctx_raw = transport::makeDtlsContext(cert_file, key_file);
     struct DtlsCtxGuard {
         SSL_CTX* ctx;

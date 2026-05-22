@@ -679,6 +679,18 @@ int main() {
         std::cout << "[call_manager] isBusy OK\n";
     }
 
+        {
+        calls::CallManager mgr(std::chrono::seconds(0));
+        mgr.create("alice", "bob");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        auto expired = mgr.expireRinging();
+        assert(expired.size() == 1);
+        assert(expired[0].callerId == "alice");
+        assert(expired[0].calleeId == "bob");
+        assert(expired[0].state    == calls::CallState::Ended);
+        std::cout << "[call_manager] expire ringing OK\n";
+    }
+
     std::cout << "\n=== Routes (TURN credentials) ===\n";
 
     {

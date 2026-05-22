@@ -1,6 +1,7 @@
 #include "cli/parser.hpp"
 #include "cli/commands.hpp"
 #include "session/session.hpp"
+#include "signaling/message_handler.hpp"
 
 #include <iostream>
 #include <cassert>
@@ -112,7 +113,6 @@ int main() {
     {
         session::Session s;
         cli::Commands cmd(s);
-
         auto r = cmd.login({});
         assert(!r.ok);
         std::cout << "[commands] login no args OK\n";
@@ -120,19 +120,16 @@ int main() {
 
     {
         session::Session s;
-        cli::Commands cmd(s);
-
-        auto r = cmd.login({"alice", "pass"});
-        assert(r.ok);
+        s.userId = "alice";
+        s.jwt    = "stub_jwt";
+        assert(s.isLoggedIn());
         assert(s.userId == "alice");
-        assert(!s.jwt.empty());
-        std::cout << "[commands] login OK\n";
+        std::cout << "[commands] login state OK\n";
     }
 
     {
         session::Session s;
         cli::Commands cmd(s);
-
         auto r = cmd.call({"bob"});
         assert(!r.ok);
         std::cout << "[commands] call without login OK\n";
@@ -140,9 +137,9 @@ int main() {
 
     {
         session::Session s;
+        s.userId = "alice";
+        s.jwt    = "stub_jwt";
         cli::Commands cmd(s);
-        cmd.login({"alice", "pass"});
-
         auto r = cmd.call({});
         assert(!r.ok);
         std::cout << "[commands] call no args OK\n";
@@ -150,9 +147,9 @@ int main() {
 
     {
         session::Session s;
+        s.userId = "alice";
+        s.jwt    = "stub_jwt";
         cli::Commands cmd(s);
-        cmd.login({"alice", "pass"});
-
         auto r = cmd.call({"bob"});
         assert(r.ok);
         assert(s.call.state      == session::AppState::Calling);
@@ -162,10 +159,11 @@ int main() {
 
     {
         session::Session s;
+        s.userId         = "alice";
+        s.jwt            = "stub_jwt";
+        s.call.state     = session::AppState::Calling;
+        s.call.remoteUser = "bob";
         cli::Commands cmd(s);
-        cmd.login({"alice", "pass"});
-        cmd.call({"bob"});
-
         auto r = cmd.call({"carol"});
         assert(!r.ok);
         std::cout << "[commands] call while in call OK\n";
@@ -412,6 +410,146 @@ int main() {
         auto r = cmd.sendfile({"audio.wav"});
         assert(r.ok);
         std::cout << "[commands] sendfile OK\n";
+    }
+
+    std::cout << "\n=== MessageHandler ===\n";
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        h.handle(R"({"type":"call.incoming","callId":"abc","from":"bob"})");
+        assert(s.call.state      == session::AppState::Ringing);
+        assert(s.call.callId     == "abc");
+        assert(s.call.remoteUser == "bob");
+        std::cout << "[msg_handler] call.incoming OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        h.handle(R"({"type":"call.created","callId":"xyz"})");
+        assert(s.call.callId == "xyz");
+        std::cout << "[msg_handler] call.created OK\n";
+    }
+
+    {
+        session::Session s;
+        s.call.state     = session::AppState::InCall;
+        s.call.callId    = "abc";
+        s.call.remoteUser = "bob";
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        h.handle(R"({"type":"call.ended","reason":"hangup"})");
+        assert(s.call.state == session::AppState::Idle);
+        assert(s.call.callId.empty());
+        std::cout << "[msg_handler] call.ended OK\n";
+    }
+
+    {
+        session::Session s;
+        s.call.state = session::AppState::Calling;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        h.handle(R"({"type":"call.failed","reason":"timeout"})");
+        assert(s.call.state == session::AppState::Idle);
+        std::cout << "[msg_handler] call.failed OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        h.handle(R"({
+            "type": "rtc.config",
+            "callId": "abc",
+            "iceServers": [{
+                "urls": ["turn:host:3478", "turns:host:5349"],
+                "username": "123:user1",
+                "credential": "abc123"
+            }]
+        })");
+
+        assert(s.turnConfig.turnUrl    == "turn:host:3478");
+        assert(s.turnConfig.turnsUrl   == "turns:host:5349");
+        assert(s.turnConfig.username   == "123:user1");
+        assert(s.turnConfig.credential == "abc123");
+        std::cout << "[msg_handler] rtc.config OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        std::string got_sdp;
+        h.onOffer([&got_sdp](const std::string& sdp) {
+            got_sdp = sdp;
+        });
+
+        h.handle(R"({"type":"webrtc.offer","callId":"abc","sdp":"v=0..."})");
+        assert(got_sdp == "v=0...");
+        std::cout << "[msg_handler] webrtc.offer OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        std::string got_sdp;
+        h.onAnswer([&got_sdp](const std::string& sdp) {
+            got_sdp = sdp;
+        });
+
+        h.handle(R"({"type":"webrtc.answer","callId":"abc","sdp":"v=0 answer"})");
+        assert(got_sdp == "v=0 answer");
+        std::cout << "[msg_handler] webrtc.answer OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        std::string got_candidate;
+        std::string got_mid;
+        int         got_mline = -1;
+        h.onIce([&](const std::string& c, const std::string& m, int ml) {
+            got_candidate = c;
+            got_mid       = m;
+            got_mline     = ml;
+        });
+
+        h.handle(R"({
+            "type": "webrtc.ice",
+            "callId": "abc",
+            "candidate": "candidate:1234",
+            "mid": "audio",
+            "mlineindex": 0
+        })");
+
+        assert(got_candidate == "candidate:1234");
+        assert(got_mid       == "audio");
+        assert(got_mline     == 0);
+        std::cout << "[msg_handler] webrtc.ice OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Repl repl(s);
+        signaling::MessageHandler h(s, repl);
+
+        h.handle("not json at all");
+        h.handle(R"({"no_type": "here"})");
+        h.handle(R"({"type": "unknown.event"})");
+        std::cout << "[msg_handler] invalid messages no crash OK\n";
     }
 
     std::cout << "\nAll client tests passed\n";

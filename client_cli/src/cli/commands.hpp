@@ -3,8 +3,11 @@
 #include "session/session.hpp"
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace cli {
+
+using WsSendCallback = std::function<void(const std::string& json)>;
 
 struct CommandResult {
     bool        ok      = true;
@@ -23,16 +26,19 @@ public:
     CommandResult mute   (const std::vector<std::string>& args);
     CommandResult unmute (const std::vector<std::string>& args);
     CommandResult status (const std::vector<std::string>& args);
-    CommandResult quit   (const std::vector<std::string>& args);
-    CommandResult record  (const std::vector<std::string>& args);
-    CommandResult stop    (const std::vector<std::string>& args);
+    CommandResult record (const std::vector<std::string>& args);
+    CommandResult stop   (const std::vector<std::string>& args);
     CommandResult sendfile(const std::vector<std::string>& args);
+    CommandResult quit   (const std::vector<std::string>& args);
 
     bool shouldQuit() const { return quit_; }
+
+    void setWsSend(WsSendCallback cb);
 
 private:
     session::Session& session_;
     bool              quit_ = false;
+    WsSendCallback    ws_send_;
 };
 
 }
