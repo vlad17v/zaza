@@ -109,20 +109,12 @@ bool LongTermCred::verifyMessageIntegrityMd5(const uint8_t*     raw_msg,
     if (!found) return false;
     if (mi_pos + 4 + 20 > raw_len) return false;
 
-    // RFC 5389 §15.4: length скорректировать до конца MI атрибута
+    // Буфер: байты до MI атрибута с скорректированным length
+    std::vector<uint8_t> buf(raw_msg, raw_msg + mi_pos);
     uint16_t adjusted_len = static_cast<uint16_t>(mi_pos - 20 + 4 + 20);
-
-    std::vector<uint8_t> buf(mi_pos + 4 + 20);
-    std::copy(raw_msg, raw_msg + buf.size(), buf.begin());
     buf[2] = (adjusted_len >> 8) & 0xFF;
     buf[3] =  adjusted_len       & 0xFF;
 
-    // Обнулить значение MI
-    std::fill(buf.begin() + mi_pos + 4,
-              buf.begin() + mi_pos + 4 + 20,
-              0x00);
-
-    // Ключ = MD5(username:realm:password)
     auto key_bytes = crypto::long_term_key_md5(username, realm_, password);
     std::vector<uint8_t> key_vec(key_bytes.begin(), key_bytes.end());
 
@@ -131,16 +123,6 @@ bool LongTermCred::verifyMessageIntegrityMd5(const uint8_t*     raw_msg,
 
     std::vector<uint8_t> expected(raw_msg + mi_pos + 4,
                                   raw_msg + mi_pos + 4 + 20);
-
-    std::cout << "[mi_md5] computed=";
-    for (auto b : computed)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
-    std::cout << "\n[mi_md5] expected=";
-    for (auto b : expected)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
-    std::cout << "\n[mi_md5] adjusted_len=" << std::dec << adjusted_len << "\n";
-    std::cout << "[mi_md5] buf[2..3]=" << std::hex 
-              << (int)buf[2] << " " << (int)buf[3] << std::dec << "\n";
 
     return crypto::constant_time_compare(computed, expected);
 }

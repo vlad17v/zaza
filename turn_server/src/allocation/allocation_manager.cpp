@@ -3,6 +3,7 @@
 #include "message/xor_codec.hpp"
 
 #include <random>
+#include <iostream>
 
 namespace allocation {
 
@@ -322,16 +323,23 @@ void AllocationManager::handleSend(
     const message::TurnMessage& msg,
     const transport::Endpoint&  client)
 {
+    std::cout << "[alloc] handleSend from " << client.address << ":" << client.port << "\n";
+
     std::lock_guard<std::mutex> lock(mutex_);
-
     auto it = by_client_.find(endpointKey(client));
-    if (it == by_client_.end()) return;
-
+    if (it == by_client_.end()) {
+        std::cout << "[alloc] no allocation for client\n";
+        return;
+    }
     auto& alloc = it->second;
 
     auto peer_attr = msg.findAttr(message::AttrType::XorPeerAddress);
     auto data_attr = msg.findAttr(message::AttrType::Data);
-    if (!peer_attr || peer_attr->value.size() < 8) return;
+
+    if (!peer_attr || peer_attr->value.size() < 8) {
+        std::cout << "[alloc] no peer attr\n";
+        return;
+    }
 
     uint32_t xaddr = (static_cast<uint32_t>(peer_attr->value[4]) << 24) |
                      (static_cast<uint32_t>(peer_attr->value[5]) << 16) |
@@ -339,16 +347,19 @@ void AllocationManager::handleSend(
                       static_cast<uint32_t>(peer_attr->value[7]);
     uint16_t xport = (static_cast<uint16_t>(peer_attr->value[2]) << 8) |
                       peer_attr->value[3];
-
     uint32_t ip   = xaddr ^ message::kMagicCookie;
     uint16_t port = xport ^ static_cast<uint16_t>(message::kMagicCookie >> 16);
-
     boost::asio::ip::address_v4 addr_v4(ip);
     transport::Endpoint peer{addr_v4.to_string(), port};
 
-    if (!alloc->hasPermission(peer.address)) return;
+    std::cout << "[alloc] peer=" << peer.address << ":" << peer.port
+              << " perm=" << alloc->hasPermission(peer.address) << "\n";
 
-    if (!data_attr || !peer_send_) return;
+    if (!alloc->hasPermission(peer.address)) return;
+    if (!data_attr || !peer_send_) {
+        std::cout << "[alloc] no data or no peer_send_\n";
+        return;
+    }
 
     peer_send_(data_attr->value, peer);
 }

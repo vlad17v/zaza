@@ -29,23 +29,29 @@ public:
                   transport::ITransport&     transport);
 
 private:
-    void handleStun(const message::TurnMessage& msg,
-                    const uint8_t*              raw,
-                    size_t                      raw_len,
-                    const transport::Endpoint&  from,
-                    transport::ITransport&      transport);
+    void        handleStun(const message::TurnMessage& msg,
+                           const uint8_t*              raw,
+                           size_t                      raw_len,
+                           const transport::Endpoint&  from,
+                           transport::ITransport&      transport);
 
-    void handleChannelData(const uint8_t*             data,
-                           size_t                     size,
-                           const transport::Endpoint& from,
-                           transport::ITransport&     transport);
+    void        handleChannelData(const uint8_t*             data,
+                                   size_t                     size,
+                                   const transport::Endpoint& from,
+                                   transport::ITransport&     transport);
 
-    void send(transport::ITransport&      transport,
-              const transport::Endpoint&  to,
-              const std::vector<uint8_t>& data);
+    void        send(transport::ITransport&      transport,
+                     const transport::Endpoint&  to,
+                     const std::vector<uint8_t>& data);
 
-    turn_auth::NonceManager     nonce_manager_;
-    turn_auth::HmacValidator    hmac_validator_;
-    turn_auth::LongTermCred     long_term_cred_;
+    std::vector<uint8_t> signResponse(
+                     const std::vector<uint8_t>& resp,
+                     const std::string&          username,
+                     const std::string&          password) const;  // ← добавить
+
+    turn_auth::NonceManager       nonce_manager_;
+    turn_auth::HmacValidator      hmac_validator_;
+    turn_auth::LongTermCred       long_term_cred_;
     allocation::AllocationManager alloc_manager_;
+    transport::ITransport* current_transport_ = nullptr;
 };

@@ -1,4 +1,6 @@
 #include "turn_dispatcher.hpp"
+#include "crypto/sha256.hpp"
+#include "crypto/hmac.hpp"
 
 #include <iostream>
 
@@ -14,8 +16,17 @@ TurnDispatcher::TurnDispatcher(asio::io_context&  ioc,
     , alloc_manager_(ioc, relay_address, relay_port_min, relay_port_max)
 {
     alloc_manager_.setClientSendCallback(
-        [this](const std::vector<uint8_t>&,
-               const transport::Endpoint&) {
+        [this](const std::vector<uint8_t>& data,
+               const transport::Endpoint&  to) {
+            if (current_transport_)
+                current_transport_->send(data, to);
+        });
+
+    alloc_manager_.setPeerSendCallback(
+        [this](const std::vector<uint8_t>& data,
+               const transport::Endpoint&  to) {
+            if (current_transport_)
+                current_transport_->send(data, to);
         });
 }
 
@@ -55,6 +66,7 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
                                  const transport::Endpoint&  from,
                                  transport::ITransport&      transport) {
 
+    current_transport_ = &transport;
     std::cout << "[dispatcher] method=" << static_cast<int>(msg.method)
               << " class=" << static_cast<int>(msg.msg_class)
               << " from " << from.address << ":" << from.port
@@ -149,28 +161,26 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
         username = std::string(username_attr->value.begin(),
                                username_attr->value.end());
 
+    
+    std::string password = hmac_validator_.getPassword(username);
     std::vector<uint8_t> resp;
 
     switch (msg.method) {
         case message::Method::Allocate: {
             std::string realm_str = long_term_cred_.realm();
-            resp = alloc_manager_.handleAllocate(msg, from,
-                                                  username, realm_str);
-
-            auto alloc = alloc_manager_.findByClient(from);
-            if (alloc) {
-                alloc_manager_.setClientSendCallback(
-                    [&transport, from_ep = from]
-                    (const std::vector<uint8_t>& data,
-                     const transport::Endpoint&  to) {
-                        transport.send(data, to);
-                    });
-                alloc_manager_.setPeerSendCallback(
-                    [&transport](const std::vector<uint8_t>& data,
-                                 const transport::Endpoint&  to) {
-                        transport.send(data, to);
-                    });
+            resp = alloc_manager_.handleAllocate(msg, from, username, realm_str);
+            std::cout << "[dispatcher] allocate resp size=" << resp.size();
+            if (resp.size() >= 2) {
+                message::TurnMessage r;
+                message::parse(resp.data(), resp.size(), r);
+                auto relay = r.findAttr(message::AttrType::XorRelayedAddress);
+                auto mapped = r.findAttr(message::AttrType::XorMappedAddress);
+                std::cout << "[dispatcher] allocate:"
+                        << " relay=" << (relay.has_value() ? "yes" : "NO")
+                        << " mapped=" << (mapped.has_value() ? "yes" : "NO")
+                        << " size=" << resp.size() << "\n";
             }
+            std::cout << "\n";
             break;
         }
         case message::Method::Refresh:
@@ -191,7 +201,7 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
     }
 
     if (!resp.empty())
-        send(transport, from, resp);
+        send(transport, from, signResponse(resp, username, password));
 }
 
 void TurnDispatcher::handleChannelData(const uint8_t*             data,
@@ -220,4 +230,39 @@ void TurnDispatcher::handleChannelData(const uint8_t*             data,
         ch.data.data(), ch.data.size(),
         binding->peer,
         alloc->relayedAddr);
+}
+
+std::vector<uint8_t> TurnDispatcher::signResponse(
+    const std::vector<uint8_t>& resp,
+    const std::string&          username,
+    const std::string&          password) const
+{
+    if (resp.size() < 20) return resp;
+
+    uint16_t type = (static_cast<uint16_t>(resp[0]) << 8) | resp[1];
+    if (message::decodeClass(type) != message::MessageClass::SuccessResponse)
+        return resp;
+
+    auto key_bytes = crypto::long_term_key_md5(
+        username, long_term_cred_.realm(), password);
+    std::vector<uint8_t> key_vec(key_bytes.begin(), key_bytes.end());
+
+    size_t mi_pos = resp.size();
+    uint16_t adjusted_len = static_cast<uint16_t>(mi_pos - 20 + 4 + 20);
+
+    std::vector<uint8_t> buf(resp.begin(), resp.begin() + mi_pos);
+    buf[2] = (adjusted_len >> 8) & 0xFF;
+    buf[3] =  adjusted_len       & 0xFF;
+
+    std::string buf_str(buf.begin(), buf.end());
+    auto mi = crypto::hmac_sha1_bytes(key_vec, buf_str);
+
+    std::vector<uint8_t> result = resp;
+    result[2] = (adjusted_len >> 8) & 0xFF;
+    result[3] =  adjusted_len       & 0xFF;
+    result.push_back(0x00); result.push_back(0x08);
+    result.push_back(0x00); result.push_back(0x14);
+    for (auto b : mi) result.push_back(b);
+
+    return result;
 }
