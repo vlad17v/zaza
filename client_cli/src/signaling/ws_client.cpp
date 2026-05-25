@@ -56,7 +56,6 @@ void WsClient::connect(const std::string& token) {
     ws_->handshake(host_, target);
 
     connected_.store(true);
-
     read_thread_ = std::thread([this]() { readLoop(); });
 }
 
@@ -86,14 +85,11 @@ void WsClient::readLoop() {
 
 void WsClient::reconnectLoop(const std::string& token) {
     int delay = kBaseDelayMs;
-
     for (int attempt = 1; attempt <= kMaxRetries && !stop_.load(); ++attempt) {
         std::cout << "[ws] reconnect attempt " << attempt
                   << " in " << delay << "ms\n";
-
         std::this_thread::sleep_for(std::chrono::milliseconds(delay));
         if (stop_.load()) return;
-
         try {
             ioc_.restart();
             connect(token);
@@ -102,10 +98,8 @@ void WsClient::reconnectLoop(const std::string& token) {
         } catch (const std::exception& e) {
             std::cerr << "[ws] reconnect failed: " << e.what() << "\n";
         }
-
         delay = std::min(delay * 2, kMaxDelayMs);
     }
-
     std::cerr << "[ws] max retries reached, giving up\n";
 }
 
@@ -130,8 +124,13 @@ void WsClient::disconnect() {
         ws_->close(websocket::close_code::normal, ec);
     }
 
-    if (read_thread_.joinable())    read_thread_.join();
-    if (reconnect_thread_.joinable()) reconnect_thread_.join();
+    if (read_thread_.joinable())
+        read_thread_.join();
+
+    ws_.reset();
+
+    if (reconnect_thread_.joinable())
+        reconnect_thread_.join();
 }
 
 }

@@ -14,9 +14,7 @@ SdpHandler::SdpHandler(PeerConnection&   pc,
     , session_(session)
     , repl_(repl)
     , ws_send_(std::move(ws_send))
-{}
-
-void SdpHandler::startCall() {
+{
     pc_.onOffer([this](const std::string& sdp) {
         json msg = {
             {"type",   "webrtc.offer"},
@@ -27,10 +25,6 @@ void SdpHandler::startCall() {
         repl_.print("[rtc] offer sent");
     });
 
-    pc_.createOffer();
-}
-
-void SdpHandler::handleOffer(const std::string& sdp) {
     pc_.onAnswer([this](const std::string& sdp) {
         json msg = {
             {"type",   "webrtc.answer"},
@@ -40,7 +34,13 @@ void SdpHandler::handleOffer(const std::string& sdp) {
         if (ws_send_) ws_send_(msg.dump());
         repl_.print("[rtc] answer sent");
     });
+}
 
+void SdpHandler::startCall() {
+    pc_.createOffer();
+}
+
+void SdpHandler::handleOffer(const std::string& sdp) {
     pc_.applyOffer(sdp);
 }
 

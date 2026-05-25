@@ -11,7 +11,8 @@ PeerConnection::PeerConnection(session::Session& session,
 {}
 
 PeerConnection::~PeerConnection() {
-    close();
+    if (pc_ && pc_->state() != rtc::PeerConnection::State::Closed)
+        close();
 }
 
 void PeerConnection::init() {
@@ -114,7 +115,6 @@ void PeerConnection::applyOffer(const std::string& sdp) {
 
     rtc::Description offer(sdp, rtc::Description::Type::Offer);
     pc_->setRemoteDescription(offer);
-    pc_->setLocalDescription(rtc::Description::Type::Answer);
 }
 
 void PeerConnection::applyAnswer(const std::string& sdp) {
@@ -135,7 +135,10 @@ void PeerConnection::addRemoteCandidate(const std::string& candidate,
 
 void PeerConnection::close() {
     if (pc_) {
-        pc_->close();
+        try {
+            if (pc_->state() != rtc::PeerConnection::State::Closed)
+                pc_->close();
+        } catch (...) {}
         pc_.reset();
     }
     audio_track_.reset();

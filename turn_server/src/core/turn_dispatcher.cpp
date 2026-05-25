@@ -54,6 +54,18 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
                                  size_t                      raw_len,
                                  const transport::Endpoint&  from,
                                  transport::ITransport&      transport) {
+
+    std::cout << "[dispatcher] method=" << static_cast<int>(msg.method)
+              << " class=" << static_cast<int>(msg.msg_class)
+              << " from " << from.address << ":" << from.port
+              << " attrs=" << msg.attributes.size() << "\n";
+
+    for (auto& attr : msg.attributes) {
+        std::cout << "[dispatcher] attr type=0x"
+                  << std::hex << static_cast<int>(attr.type)
+                  << " len=" << std::dec << attr.value.size() << "\n";
+    }
+
     if (msg.msg_class == message::MessageClass::Indication) {
         if (msg.method == message::Method::Send) {
             alloc_manager_.handleSend(msg, from);
@@ -69,6 +81,10 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
 
     auto auth_result = long_term_cred_.authenticate(
         msg, raw, raw_len, allocated_username);
+
+    std::cout << "[dispatcher] size=" << raw_len
+          << " attrs=" << msg.attributes.size()
+          << " auth=" << static_cast<int>(auth_result) << "\n";
 
     switch (auth_result) {
         case turn_auth::AuthResult::MissingCredentials: {

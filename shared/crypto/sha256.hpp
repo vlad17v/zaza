@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include <openssl/sha.h>
+#include <openssl/md5.h>
 #include <openssl/evp.h>
 
 namespace crypto {
@@ -32,6 +33,19 @@ inline std::vector<uint8_t> long_term_key(const std::string& username,
                                             const std::string& realm,
                                             const std::string& password) {
     return sha256(username + ":" + realm + ":" + password);
+}
+
+inline std::vector<uint8_t> long_term_key_md5(const std::string& username,
+                                               const std::string& realm,
+                                               const std::string& password) {
+    std::vector<uint8_t> result(MD5_DIGEST_LENGTH);
+    std::string input = username + ":" + realm + ":" + password;
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx, EVP_md5(), nullptr);
+    EVP_DigestUpdate(ctx, input.data(), input.size());
+    EVP_DigestFinal_ex(ctx, result.data(), nullptr);
+    EVP_MD_CTX_free(ctx);
+    return result;
 }
 
 }

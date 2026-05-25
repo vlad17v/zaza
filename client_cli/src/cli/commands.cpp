@@ -54,6 +54,7 @@ CommandResult Commands::call(const std::vector<std::string>& args) {
 
     session_.call.remoteUser = args[0];
     session_.call.state      = session::AppState::Calling;
+    session_.call.is_caller = true;
 
     if (ws_send_) {
         json msg = {{"type", "call.create"},
@@ -196,6 +197,14 @@ CommandResult Commands::quit(const std::vector<std::string>& args) {
 
 void Commands::setWsSend(WsSendCallback cb) {
     ws_send_ = std::move(cb);
+}
+
+void Commands::setCaptureCallback(CaptureCallback cb) {
+    capture_cb_ = std::move(cb);
+}
+
+void Commands::setSendfileCallback(SendfileCallback cb) {
+    sendfile_cb_ = std::move(cb);
 }
 
 }

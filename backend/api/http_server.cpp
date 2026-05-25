@@ -48,6 +48,7 @@ private:
 
     void handle_request(std::shared_ptr<HttpRequest> req) {
         if (beast::websocket::is_upgrade(*req)) {
+            std::cout << "[http] WebSocket upgrade request\n";
             auto ws = std::make_unique<WsStream>(std::move(stream_));
             ws_server_.accept(std::move(ws), std::move(*req));
             return;

@@ -18,6 +18,7 @@ struct CallContext {
     std::string remoteUser;
     AppState    state = AppState::Idle;
     bool        muted = false;
+    bool        is_caller = false;
 };
 
 struct RecordContext {

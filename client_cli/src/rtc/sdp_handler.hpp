@@ -19,9 +19,7 @@ public:
                WsSendCallback    ws_send);
 
     void startCall();
-
-    void handleOffer(const std::string& sdp);
-
+    void handleOffer (const std::string& sdp);
     void handleAnswer(const std::string& sdp);
 
 private:

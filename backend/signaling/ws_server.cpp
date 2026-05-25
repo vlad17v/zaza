@@ -15,8 +15,9 @@ WsSession::WsSession(std::unique_ptr<WsStream>               ws,
     , on_close_(std::move(on_close))
 {}
 
-void WsSession::run() {
+void WsSession::run(http::request<http::string_body> req) {
     ws_->async_accept(
+        req,
         [self = shared_from_this()](beast::error_code ec) {
             if (ec) {
                 self->on_close_(self->userId_);
@@ -37,6 +38,10 @@ void WsSession::read() {
 
             auto msg = beast::buffers_to_string(self->buffer_.data());
             self->buffer_.consume(self->buffer_.size());
+
+            std::cout << "[ws] message from " << self->userId_
+                      << ": " << msg << "\n";
+
             self->on_message_(self->userId_, msg);
             self->read();
         });
@@ -104,19 +109,25 @@ void WsServer::accept(std::unique_ptr<WsStream>            ws,
         sessions_[userId] = session;
     }
 
-    session->run();
+    std::cout << "[ws] user connected: " << userId << "\n";
+
+    session->run(std::move(req));
 }
 
 bool WsServer::send(const std::string& userId,
                     const std::string& message) {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     auto it = sessions_.find(userId);
-    if (it == sessions_.end()) return false;
+    if (it == sessions_.end()) {
+        std::cerr << "[ws] send failed: " << userId << " not connected\n";
+        return false;
+    }
     it->second->send(message);
     return true;
 }
 
 void WsServer::removeSession(const std::string& userId) {
+    std::cout << "[ws] user disconnected: " << userId << "\n";
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     sessions_.erase(userId);
 }

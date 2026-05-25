@@ -49,6 +49,7 @@ void MessageHandler::handleCallIncoming(const json& msg) {
     session_.call.callId     = callId;
     session_.call.remoteUser = from;
     session_.call.state      = session::AppState::Ringing;
+    session_.call.is_caller = false;
 
     repl_.print("incoming call from " + from +
                 " (callId: " + callId + ")\n"
@@ -110,6 +111,9 @@ void MessageHandler::handleWebrtcOffer(const json& msg) {
         repl_.print("[error] webrtc.offer missing sdp");
         return;
     }
+
+    if (session_.call.is_caller) return;
+
     if (on_offer_)
         on_offer_(msg["sdp"]);
     else
@@ -121,6 +125,9 @@ void MessageHandler::handleWebrtcAnswer(const json& msg) {
         repl_.print("[error] webrtc.answer missing sdp");
         return;
     }
+
+    if (!session_.call.is_caller) return;
+
     if (on_answer_)
         on_answer_(msg["sdp"]);
     else
