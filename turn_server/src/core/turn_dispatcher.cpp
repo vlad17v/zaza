@@ -212,24 +212,71 @@ void TurnDispatcher::handleChannelData(const uint8_t*             data,
     auto r = message::parse_channel_data(data, size, ch);
     if (r != message::ChannelDataResult::Ok) return;
 
+    std::cout << "[dispatcher] channelData size=" << size
+              << " channel=" << ch.channel_number << "\n";
+
     auto alloc = alloc_manager_.findByClient(from);
-    if (!alloc) return;
+    if (!alloc) {
+        std::cout << "[dispatcher] channelData: no alloc\n";
+        return;
+    }
 
-    auto binding = alloc->findChannelByNumber(ch.channel_number);
-    if (!binding) return;
+    // Найти peer по channel number
+    auto binding_it = alloc->channels.find(ch.channel_number);
+    if (binding_it == alloc->channels.end()) {
+        std::cout << "[dispatcher] channelData: no channel binding\n";
+        return;
+    }
 
-    if (!alloc->hasPermission(binding->peer.address)) return;
+    transport::Endpoint peer = binding_it->second.peer;
+    std::cout << "[dispatcher] channelData peer="
+              << peer.address << ":" << peer.port << "\n";
 
-    alloc_manager_.setPeerSendCallback(
-        [&transport](const std::vector<uint8_t>& d,
-                     const transport::Endpoint&  to) {
-            transport.send(d, to);
-        });
+    if (!alloc->hasPermission(peer.address)) {
+        std::cout << "[dispatcher] channelData: no permission\n";
+        return;
+    }
 
-    alloc_manager_.handlePeerData(
-        ch.data.data(), ch.data.size(),
-        binding->peer,
-        alloc->relayedAddr);
+    // Найти аллокацию получателя по relay адресу
+    auto peer_alloc = alloc_manager_.findByRelay(peer);
+    if (peer_alloc) {
+        // Получатель тоже TURN клиент — переслать как ChannelData
+        // найти обратный channel binding у получателя
+        uint16_t peer_channel = 0;
+        for (auto& [num, bind] : peer_alloc->channels) {
+            if (bind.peer.address == alloc->relayedAddr.address &&
+                bind.peer.port   == alloc->relayedAddr.port) {
+                peer_channel = num;
+                break;
+            }
+        }
+
+        std::cout << "[dispatcher] channelData relay to "
+                  << peer_alloc->clientAddr.address << ":"
+                  << peer_alloc->clientAddr.port
+                  << " channel=" << peer_channel << "\n";
+
+        if (peer_channel != 0) {
+            auto fwd = message::make_channel_data(peer_channel, ch.data);
+            transport.send(fwd, peer_alloc->clientAddr);
+        } else {
+            // Нет обратного channel — послать как Data Indication
+            boost::system::error_code ec;
+            auto relay_v4 = boost::asio::ip::make_address_v4(
+                alloc->relayedAddr.address, ec);
+            if (!ec) {
+                std::array<uint8_t, 12> tid{};
+                auto indication = message::make_data_indication(
+                    tid, relay_v4.to_uint(),
+                    alloc->relayedAddr.port, ch.data);
+                transport.send(indication, peer_alloc->clientAddr);
+            }
+        }
+        return;
+    }
+
+    // Внешний пир
+    transport.send(ch.data, peer);
 }
 
 std::vector<uint8_t> TurnDispatcher::signResponse(

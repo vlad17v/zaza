@@ -72,6 +72,8 @@ private:
 
     std::string             last_token_;
 
+    ssl::context            ssl_ctx_; 
+
     static constexpr int kMaxRetries    = 10;
     static constexpr int kBaseDelayMs   = 500;
     static constexpr int kMaxDelayMs    = 30000;

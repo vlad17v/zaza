@@ -49,6 +49,8 @@ CommandResult Commands::call(const std::vector<std::string>& args) {
         return {false, "usage: call <userId>"};
     if (!session_.isLoggedIn())
         return {false, "not logged in"};
+    if (args[0] == session_.userId)
+        return {false, "cannot call yourself"};
     if (session_.isInCall())
         return {false, "already in call"};
 

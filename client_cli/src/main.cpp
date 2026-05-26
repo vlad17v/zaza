@@ -11,6 +11,7 @@
 #include "audio/wav.hpp"
 
 #include <nlohmann/json.hpp>
+#include <openssl/crypto.h>
 #include <csignal>
 #include <iostream>
 #include <memory>
@@ -54,8 +55,27 @@ int main() {
     };
 
     auto initRtc = [&]() {
+        if (pc) {
+            try { pc->close(); } catch (...) {}
+            pc.reset();
+        }
+        sdp_handler.reset();
+        ice_handler.reset();
+
         pc = std::make_unique<rtc_client::PeerConnection>(session, repl);
         pc->init();
+
+        pc->onFailed([&]() {
+            if (!session.call.callId.empty()) {
+                nlohmann::json msg = {
+                    {"type",   "call.hangup"},
+                    {"callId", session.call.callId}
+                };
+                ws_send(msg.dump());
+            }
+            stopAudio();
+            session.call = session::CallContext{};
+        });
 
         sdp_handler = std::make_unique<rtc_client::SdpHandler>(
             *pc, session, repl, ws_send);
@@ -152,8 +172,16 @@ int main() {
         handler.handle(msg);
     });
 
-    ws_client.onClose([&repl]() {
-        repl.print("[ws] disconnected, reconnecting...");
+    ws_client.onClose([&repl, &session, &pc, &sdp_handler, &ice_handler, &stopAudio]() {
+        repl.print("[ws] disconnected");
+        if (session.isInCall()) {
+            stopAudio();
+            pc.reset();
+            sdp_handler.reset();
+            ice_handler.reset();
+            session.call = session::CallContext{};
+            repl.print("[call] ended, reason: server disconnected");
+        }
     });
 
     repl.setOnLogin([&ws_client, &session]() {
@@ -165,6 +193,8 @@ int main() {
     });
 
     repl.run();
+
+    OPENSSL_cleanup();
 
     return 0;
 }

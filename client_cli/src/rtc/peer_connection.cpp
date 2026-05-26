@@ -69,25 +69,21 @@ void PeerConnection::handleStateChange(rtc::PeerConnection::State state) {
         case rtc::PeerConnection::State::Connected:
             connected_.store(true);
             reconnect_attempts_ = 0;
+            session_.call.state = session::AppState::InCall;
             repl_.print("[rtc] connected");
-            break;
-
-        case rtc::PeerConnection::State::Disconnected:
-            connected_.store(false);
-            if (reconnect_attempts_ < kMaxReconnectAttempts) {
-                ++reconnect_attempts_;
-                repl_.print("[rtc] disconnected, attempt "
-                            + std::to_string(reconnect_attempts_)
-                            + "/" + std::to_string(kMaxReconnectAttempts)
-                            + " — use hangup and call again");
-            } else {
-                repl_.print("[rtc] disconnected, max reconnects reached");
-            }
             break;
 
         case rtc::PeerConnection::State::Failed:
             connected_.store(false);
             repl_.print("[rtc] failed — use 'hangup' and call again");
+            if (on_failed_) on_failed_();
+            break;
+
+        case rtc::PeerConnection::State::Disconnected:
+            connected_.store(false);
+            session_.call.state = session::AppState::Idle;
+            session_.call = session::CallContext{};
+            repl_.print("[rtc] disconnected");
             break;
 
         case rtc::PeerConnection::State::Closed:

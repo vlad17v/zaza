@@ -356,12 +356,34 @@ void AllocationManager::handleSend(
               << " perm=" << alloc->hasPermission(peer.address) << "\n";
 
     if (!alloc->hasPermission(peer.address)) return;
-    if (!data_attr || !peer_send_) {
-        std::cout << "[alloc] no data or no peer_send_\n";
+    if (!data_attr) return;
+
+    // Найти аллокацию получателя по relay адресу
+    auto peer_it = by_relay_.find(endpointKey(peer));
+    if (peer_it != by_relay_.end()) {
+        // Получатель — тоже TURN клиент на этом сервере
+        // Переслать как Data Indication
+        auto& peer_alloc = peer_it->second;
+        std::cout << "[alloc] relay to client " << peer_alloc->clientAddr.address
+                  << ":" << peer_alloc->clientAddr.port << "\n";
+
+        boost::system::error_code ec;
+        auto sender_v4 = boost::asio::ip::make_address_v4(
+            alloc->relayedAddr.address, ec);
+        uint32_t sender_ip = ec ? 0 : sender_v4.to_uint();
+
+        std::array<uint8_t, 12> tid{};
+        auto indication = message::make_data_indication(
+            tid, sender_ip, alloc->relayedAddr.port, data_attr->value);
+
+        if (client_send_)
+            client_send_(indication, peer_alloc->clientAddr);
         return;
     }
 
-    peer_send_(data_attr->value, peer);
+    // Получатель внешний — отправить напрямую
+    if (peer_send_)
+        peer_send_(data_attr->value, peer);
 }
 
 void AllocationManager::handlePeerData(
