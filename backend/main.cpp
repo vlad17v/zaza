@@ -1,0 +1,148 @@
+#include "auth/auth_service.hpp"
+#include "api/http_server.hpp"
+#include "api/routes.hpp"
+#include "signaling/ws_server.hpp"
+#include "signaling/router.hpp"
+#include "calls/call_manager.hpp"
+#include "log/logger.hpp"
+#include "config/config.hpp"
+
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
+#include <nlohmann/json.hpp>
+
+#include <iostream>
+#include <string>
+#include <csignal>
+#include <memory>
+#include <thread>
+
+namespace asio = boost::asio;
+namespace ssl  = boost::asio::ssl;
+
+static asio::io_context* g_ioc  = nullptr;
+static asio::executor_work_guard<asio::io_context::executor_type>* g_work = nullptr;
+
+static void signal_handler(int) {
+    LOG("[backend] shutting down...");
+    if (g_work) g_work->reset();
+    if (g_ioc)  g_ioc->stop();
+}
+
+int main(int argc, char* argv[]) {
+    std::string env_file = (argc >= 2) ? argv[1] : "../backend.env";
+    try {
+        Config::instance().load(env_file);
+    } catch (const std::exception& e) {
+        std::cerr << "[backend] config: " << e.what() << " — using defaults\n";
+    }
+
+    const std::string host            = CFG_DEF("HOST",            "0.0.0.0");
+    const uint16_t    port            = CFG_INT("PORT",            8080);
+    const std::string db_path         = CFG_DEF("DB_PATH",         "../data/chat.db");
+    const std::string jwt_secret      = CFG_DEF("JWT_SECRET",      "change_me_in_production");
+    const int64_t     jwt_ttl         = CFG_INT("JWT_TTL",         86400);
+    const std::string cert_file       = CFG_DEF("CERT_FILE",       "../backend/certs/cert.pem");
+    const std::string key_file        = CFG_DEF("KEY_FILE",        "../backend/certs/key.pem");
+    const std::string turn_host       = CFG_DEF("TURN_HOST",       "localhost");
+    const std::string turn_secret     = CFG_DEF("TURN_SECRET",     "turn_shared_secret");
+    const int         expire_interval = CFG_INT("EXPIRE_INTERVAL", 5);
+    const std::string log_file        = CFG_DEF("LOG_FILE",        "");
+
+    if (!log_file.empty())
+        Logger::instance().setFile(log_file);
+
+    LOG("[backend] starting on " + host + ":" + std::to_string(port));
+
+    asio::io_context ioc;
+    g_ioc = &ioc;
+
+    auto work = asio::make_work_guard(ioc);
+    g_work = &work;
+
+    std::signal(SIGINT,  signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    ssl::context ssl_ctx(ssl::context::tls_server);
+    try {
+        ssl_ctx.set_options(
+            ssl::context::default_workarounds |
+            ssl::context::no_sslv2           |
+            ssl::context::no_sslv3           |
+            ssl::context::no_tlsv1           |
+            ssl::context::no_tlsv1_1         |
+            ssl::context::single_dh_use);
+        ssl_ctx.use_certificate_chain_file(cert_file);
+        ssl_ctx.use_private_key_file(key_file, ssl::context::pem);
+        LOG("[backend] TLS loaded: " + cert_file);
+    } catch (const std::exception& e) {
+        LOGE("[backend] TLS error: " + std::string(e.what()));
+        LOGE("[backend] generate cert: openssl req -x509 "
+                     "-newkey rsa:2048 -nodes "
+                     "-keyout tls/key.pem -out tls/cert.pem "
+                     "-days 365 -subj /CN=localhost");
+        return 1;
+    }
+
+    auth::AuthService auth_service(jwt_secret, db_path, jwt_ttl);
+    calls::CallManager call_manager(std::chrono::seconds(30));
+
+    api::TurnConfig turn_config;
+    turn_config.host          = turn_host;
+    turn_config.shared_secret = turn_secret;
+    turn_config.port_plain    = CFG_INT("TURN_PORT_PLAIN", 3478);
+    turn_config.port_tls      = CFG_INT("TURN_PORT_TLS",  5349);
+    turn_config.ttl           = CFG_INT("TURN_TTL",       3600);
+
+    signaling::WsServer ws_server(auth_service);
+
+    auto rtc_config_gen = [&](const std::string& userId) {
+        return api::generateRtcConfig(userId, turn_config);
+    };
+
+    signaling::Router router(ws_server, call_manager, rtc_config_gen);
+
+    ws_server.onMessage([&router](const std::string& userId,
+                                   const std::string& msg) {
+        router.handle(userId, msg);
+    });
+
+    api::HttpServer http_server(ioc, ssl_ctx, host, port);
+    http_server.setWsServer(ws_server);
+
+    api::registerRoutes(http_server, auth_service, turn_config);
+
+    asio::steady_timer expire_timer(ioc);
+    std::function<void()> schedule_expire = [&]() {
+        expire_timer.expires_after(
+            std::chrono::seconds(expire_interval));
+        expire_timer.async_wait(
+            [&](boost::system::error_code ec) {
+                if (!ec) {
+                    router.checkExpired();
+                    schedule_expire();
+                }
+            });
+    };
+    schedule_expire();
+
+    http_server.run();
+    LOG("[backend] listening on https://" + host + ":" + std::to_string(port));
+
+    unsigned int threads = std::max(2u,
+        std::thread::hardware_concurrency());
+
+    std::vector<std::thread> thread_pool;
+    for (unsigned i = 1; i < threads; ++i)
+        thread_pool.emplace_back([&ioc]() { ioc.run(); });
+
+    ioc.run();
+
+    work.reset();
+
+    for (auto& t : thread_pool)
+        if (t.joinable()) t.join();
+
+    LOG("[backend] stopped");
+    return 0;
+}

@@ -1,5 +1,6 @@
 add_executable(turn_server
     src/main.cpp
+    src/core/turn_dispatcher.cpp
     src/transport/udp_transport.cpp
     src/transport/tcp_transport.cpp
     src/transport/tls_transport.cpp

@@ -19,6 +19,7 @@ enum class Method : uint16_t {
     Allocate         = 0x003,
     Refresh          = 0x004,
     Send             = 0x006,
+    Data             = 0x007,
     CreatePermission = 0x008,
     ChannelBind      = 0x009,
     Unknown          = 0xFFF,

@@ -150,8 +150,8 @@ std::vector<uint8_t> make_data_indication(
     uint16_t                        peer_port,
     const std::vector<uint8_t>&     payload)
 {
-    return MessageBuilder(Method::Send, MessageClass::Indication, tid)
-        .addXorMappedAddress(peer_ipv4, peer_port)
+    return MessageBuilder(Method::Data, MessageClass::Indication, tid)
+        .addXorPeerAddress(peer_ipv4, peer_port)
         .addAttr(AttrType::Data,
                  std::vector<uint8_t>(payload.begin(), payload.end()))
         .build();
@@ -185,6 +185,11 @@ std::vector<uint8_t> make_error(const std::array<uint8_t, 12>& tid,
     return MessageBuilder(Method::Allocate, MessageClass::ErrorResponse, tid)
         .addErrorCode(code, reason)
         .build();
+}
+
+MessageBuilder& MessageBuilder::addXorPeerAddress(uint32_t ipv4, uint16_t port) {
+    appendXorAddress(AttrType::XorPeerAddress, ipv4, port);
+    return *this;
 }
 
 }

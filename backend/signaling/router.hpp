@@ -21,6 +21,8 @@ public:
     void handle(const std::string& userId,
                 const std::string& json);
 
+    void checkExpired();
+
 private:
     void onCallCreate (const std::string& userId,
                        const nlohmann::json& msg);
@@ -38,8 +40,6 @@ private:
                   const nlohmann::json& msg);
     void sendError(const std::string& userId,
                    const std::string& reason);
-
-    void checkExpired();
 
     WsServer&           ws_;
     calls::CallManager& call_manager_;

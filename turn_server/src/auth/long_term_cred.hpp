@@ -44,6 +44,11 @@ private:
                                 const std::string& username,
                                 const std::string& password) const;
 
+    bool verifyMessageIntegrityMd5(const uint8_t*     raw_msg,
+                                size_t             raw_len,
+                                const std::string& username,
+                                const std::string& password) const;
+
     std::string    realm_;
     NonceManager&  nonce_manager_;
     HmacValidator& hmac_validator_;

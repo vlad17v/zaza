@@ -1,4 +1,5 @@
 #include "ws_server.hpp"
+#include "log/logger.hpp"
 
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -15,8 +16,9 @@ WsSession::WsSession(std::unique_ptr<WsStream>               ws,
     , on_close_(std::move(on_close))
 {}
 
-void WsSession::run() {
+void WsSession::run(http::request<http::string_body> req) {
     ws_->async_accept(
+        req,
         [self = shared_from_this()](beast::error_code ec) {
             if (ec) {
                 self->on_close_(self->userId_);
@@ -37,6 +39,7 @@ void WsSession::read() {
 
             auto msg = beast::buffers_to_string(self->buffer_.data());
             self->buffer_.consume(self->buffer_.size());
+
             self->on_message_(self->userId_, msg);
             self->read();
         });
@@ -104,19 +107,25 @@ void WsServer::accept(std::unique_ptr<WsStream>            ws,
         sessions_[userId] = session;
     }
 
-    session->run();
+    LOG("[ws] user connected: " + userId);
+
+    session->run(std::move(req));
 }
 
 bool WsServer::send(const std::string& userId,
                     const std::string& message) {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     auto it = sessions_.find(userId);
-    if (it == sessions_.end()) return false;
+    if (it == sessions_.end()) {
+        LOGE("[ws] send failed: " + userId + " not connected");
+        return false;
+    }
     it->second->send(message);
     return true;
 }
 
 void WsServer::removeSession(const std::string& userId) {
+    LOG("[ws] user disconnected: " + userId);
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     sessions_.erase(userId);
 }

@@ -3,6 +3,7 @@
 #include "message/xor_codec.hpp"
 
 #include <random>
+#include <iostream>
 
 namespace allocation {
 
@@ -323,15 +324,18 @@ void AllocationManager::handleSend(
     const transport::Endpoint&  client)
 {
     std::lock_guard<std::mutex> lock(mutex_);
-
     auto it = by_client_.find(endpointKey(client));
-    if (it == by_client_.end()) return;
-
+    if (it == by_client_.end()) {
+        return;
+    }
     auto& alloc = it->second;
 
     auto peer_attr = msg.findAttr(message::AttrType::XorPeerAddress);
     auto data_attr = msg.findAttr(message::AttrType::Data);
-    if (!peer_attr || peer_attr->value.size() < 8) return;
+
+    if (!peer_attr || peer_attr->value.size() < 8) {
+        return;
+    }
 
     uint32_t xaddr = (static_cast<uint32_t>(peer_attr->value[4]) << 24) |
                      (static_cast<uint32_t>(peer_attr->value[5]) << 16) |
@@ -339,18 +343,34 @@ void AllocationManager::handleSend(
                       static_cast<uint32_t>(peer_attr->value[7]);
     uint16_t xport = (static_cast<uint16_t>(peer_attr->value[2]) << 8) |
                       peer_attr->value[3];
-
     uint32_t ip   = xaddr ^ message::kMagicCookie;
     uint16_t port = xport ^ static_cast<uint16_t>(message::kMagicCookie >> 16);
-
     boost::asio::ip::address_v4 addr_v4(ip);
     transport::Endpoint peer{addr_v4.to_string(), port};
 
     if (!alloc->hasPermission(peer.address)) return;
+    if (!data_attr) return;
 
-    if (!data_attr || !peer_send_) return;
+    auto peer_it = by_relay_.find(endpointKey(peer));
+    if (peer_it != by_relay_.end()) {
+        auto& peer_alloc = peer_it->second;
 
-    peer_send_(data_attr->value, peer);
+        boost::system::error_code ec;
+        auto sender_v4 = boost::asio::ip::make_address_v4(
+            alloc->relayedAddr.address, ec);
+        uint32_t sender_ip = ec ? 0 : sender_v4.to_uint();
+
+        std::array<uint8_t, 12> tid{};
+        auto indication = message::make_data_indication(
+            tid, sender_ip, alloc->relayedAddr.port, data_attr->value);
+
+        if (client_send_)
+            client_send_(indication, peer_alloc->clientAddr);
+        return;
+    }
+
+    if (peer_send_)
+        peer_send_(data_attr->value, peer);
 }
 
 void AllocationManager::handlePeerData(

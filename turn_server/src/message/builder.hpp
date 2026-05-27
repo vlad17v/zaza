@@ -19,6 +19,7 @@ public:
     MessageBuilder& addLifetime(uint32_t seconds);
     MessageBuilder& addXorMappedAddress(uint32_t ipv4, uint16_t port);
     MessageBuilder& addXorRelayedAddress(uint32_t ipv4, uint16_t port);
+    MessageBuilder& addXorPeerAddress(uint32_t ipv4, uint16_t port);
 
     std::vector<uint8_t> build() const;
 

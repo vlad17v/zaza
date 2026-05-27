@@ -1,2 +1,14 @@
-build/*
-backend/certs/*
+build/
+data/*.db
+data/*.log
+backend/certs/*.pem
+backend/certs/*.key
+backend/certs/*.crt
+*.wav
+.vscode/
+.idea/
+*.swp
+*.swo
+*.env
+!backend.env.example
+!turn.env.example

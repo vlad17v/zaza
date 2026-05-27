@@ -37,7 +37,7 @@ public:
               MessageHandler             on_message,
               std::function<void(const std::string&)> on_close);
 
-    void run();
+    void run(http::request<http::string_body> req);
     void send(const std::string& message);
     const std::string& userId() const { return userId_; }
 

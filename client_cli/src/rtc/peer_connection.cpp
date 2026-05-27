@@ -11,7 +11,8 @@ PeerConnection::PeerConnection(session::Session& session,
 {}
 
 PeerConnection::~PeerConnection() {
-    close();
+    if (pc_ && pc_->state() != rtc::PeerConnection::State::Closed)
+        close();
 }
 
 void PeerConnection::init() {
@@ -68,25 +69,21 @@ void PeerConnection::handleStateChange(rtc::PeerConnection::State state) {
         case rtc::PeerConnection::State::Connected:
             connected_.store(true);
             reconnect_attempts_ = 0;
+            session_.call.state = session::AppState::InCall;
             repl_.print("[rtc] connected");
-            break;
-
-        case rtc::PeerConnection::State::Disconnected:
-            connected_.store(false);
-            if (reconnect_attempts_ < kMaxReconnectAttempts) {
-                ++reconnect_attempts_;
-                repl_.print("[rtc] disconnected, attempt "
-                            + std::to_string(reconnect_attempts_)
-                            + "/" + std::to_string(kMaxReconnectAttempts)
-                            + " — use hangup and call again");
-            } else {
-                repl_.print("[rtc] disconnected, max reconnects reached");
-            }
             break;
 
         case rtc::PeerConnection::State::Failed:
             connected_.store(false);
             repl_.print("[rtc] failed — use 'hangup' and call again");
+            if (on_failed_) on_failed_();
+            break;
+
+        case rtc::PeerConnection::State::Disconnected:
+            connected_.store(false);
+            session_.call.state = session::AppState::Idle;
+            session_.call = session::CallContext{};
+            repl_.print("[rtc] disconnected");
             break;
 
         case rtc::PeerConnection::State::Closed:
@@ -114,7 +111,6 @@ void PeerConnection::applyOffer(const std::string& sdp) {
 
     rtc::Description offer(sdp, rtc::Description::Type::Offer);
     pc_->setRemoteDescription(offer);
-    pc_->setLocalDescription(rtc::Description::Type::Answer);
 }
 
 void PeerConnection::applyAnswer(const std::string& sdp) {
@@ -135,7 +131,10 @@ void PeerConnection::addRemoteCandidate(const std::string& candidate,
 
 void PeerConnection::close() {
     if (pc_) {
-        pc_->close();
+        try {
+            if (pc_->state() != rtc::PeerConnection::State::Closed)
+                pc_->close();
+        } catch (...) {}
         pc_.reset();
     }
     audio_track_.reset();

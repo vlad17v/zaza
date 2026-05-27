@@ -1,7 +1,7 @@
 #include "router.hpp"
+#include "log/logger.hpp"
 
 #include <nlohmann/json.hpp>
-#include <iostream>
 
 namespace signaling {
 
@@ -62,20 +62,21 @@ void Router::onCallCreate(const std::string& userId, const json& msg) {
     try {
         callId = call_manager_.create(userId, calleeId);
     } catch (const std::exception& e) {
+        LOGE("[router] call.create failed"
+             " caller=" + userId +
+             " callee=" + calleeId +
+             " reason=" + e.what());
         sendError(userId, e.what());
         return;
     }
 
-    sendJson(userId, {
-        {"type",   "call.created"},
-        {"callId", callId}
-    });
+    LOG("[router] call.create"
+        " caller=" + userId +
+        " callee=" + calleeId +
+        " callId=" + callId);
 
-    sendJson(calleeId, {
-        {"type",   "call.incoming"},
-        {"callId", callId},
-        {"from",   userId}
-    });
+    sendJson(userId,   {{"type", "call.created"}, {"callId", callId}});
+    sendJson(calleeId, {{"type", "call.incoming"}, {"callId", callId}, {"from", userId}});
 }
 
 void Router::onCallAccept(const std::string& userId, const json& msg) {
@@ -89,9 +90,18 @@ void Router::onCallAccept(const std::string& userId, const json& msg) {
     try {
         session = call_manager_.accept(callId, userId);
     } catch (const std::exception& e) {
+        LOGE("[router] call.accept failed"
+             " callId=" + callId +
+             " user=" + userId +
+             " reason=" + e.what());
         sendError(userId, e.what());
         return;
     }
+
+    LOG("[router] call.accept"
+        " callId=" + callId +
+        " caller=" + session.callerId +
+        " callee=" + session.calleeId);
 
     auto callerConfig = rtc_config_gen_(session.callerId);
     auto calleeConfig = rtc_config_gen_(session.calleeId);
@@ -119,9 +129,15 @@ void Router::onCallReject(const std::string& userId, const json& msg) {
     try {
         session = call_manager_.reject(callId, userId);
     } catch (const std::exception& e) {
+        LOGE("[router] call.reject failed"
+             " callId=" + callId + " reason=" + e.what());
         sendError(userId, e.what());
         return;
     }
+
+    LOG("[router] call.reject"
+        " callId=" + callId +
+        " by=" + userId);
 
     sendJson(session.callerId, {
         {"type",   "call.ended"},
@@ -141,9 +157,15 @@ void Router::onCallHangup(const std::string& userId, const json& msg) {
     try {
         session = call_manager_.hangup(callId, userId);
     } catch (const std::exception& e) {
+        LOGE("[router] call.hangup failed"
+             " callId=" + callId + " reason=" + e.what());
         sendError(userId, e.what());
         return;
     }
+
+    LOG("[router] call.hangup"
+        " callId=" + callId +
+        " by=" + userId);
 
     std::string otherId = (session.callerId == userId)
                         ? session.calleeId
@@ -167,6 +189,7 @@ void Router::onWebrtcRelay(const std::string& userId,
 
     auto session = call_manager_.find(callId);
     if (!session) {
+        LOGE("[router] webrtc relay failed: call not found callId=" + callId);
         sendError(userId, "call not found");
         return;
     }
@@ -181,6 +204,10 @@ void Router::onWebrtcRelay(const std::string& userId,
 void Router::checkExpired() {
     auto expired = call_manager_.expireRinging();
     for (auto& session : expired) {
+        LOG("[router] call.timeout callId=" + session.callId +
+            " caller=" + session.callerId +
+            " callee=" + session.calleeId);
+
         sendJson(session.callerId, {
             {"type",   "call.failed"},
             {"callId", session.callId},

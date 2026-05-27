@@ -22,3 +22,15 @@ target_link_libraries(backend PUBLIC
     OpenSSL::SSL
     Boost::system
 )
+
+add_executable(backend_server
+    main.cpp
+)
+
+target_include_directories(backend_server PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(backend_server PRIVATE
+    backend
+)

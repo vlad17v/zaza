@@ -18,6 +18,7 @@ using IceCallback    = std::function<void(const std::string& candidate,
                                           const std::string& mid,
                                           int                mlineindex)>;
 using TrackCallback  = std::function<void(std::shared_ptr<rtc::Track>)>;
+using FailedCallback = std::function<void()>;
 
 class PeerConnection {
 public:
@@ -46,6 +47,7 @@ public:
     void onAnswer(AnswerCallback cb) { on_answer_ = std::move(cb); }
     void onIce   (IceCallback    cb) { on_ice_    = std::move(cb); }
     void onTrack (TrackCallback  cb) { on_track_  = std::move(cb); }
+    void onFailed(FailedCallback cb) { on_failed_ = std::move(cb); }
 
     std::shared_ptr<rtc::Track> audioTrack() { return audio_track_; }
 
@@ -67,6 +69,7 @@ private:
     AnswerCallback on_answer_;
     IceCallback    on_ice_;
     TrackCallback  on_track_;
+    FailedCallback on_failed_;
 };
 
 }
