@@ -44,6 +44,8 @@ int main(int argc, char* argv[]) {
     asio::io_context ioc;
     g_ioc = &ioc;
 
+    auto work = asio::make_work_guard(ioc);
+
     std::signal(SIGINT,  signal_handler);
     std::signal(SIGTERM, signal_handler);
 

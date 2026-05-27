@@ -1,4 +1,5 @@
 #include "ws_server.hpp"
+#include "log/logger.hpp"
 
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -106,7 +107,7 @@ void WsServer::accept(std::unique_ptr<WsStream>            ws,
         sessions_[userId] = session;
     }
 
-    std::cout << "[ws] user connected: " << userId << "\n";
+    LOG("[ws] user connected: " + userId);
 
     session->run(std::move(req));
 }
@@ -116,7 +117,7 @@ bool WsServer::send(const std::string& userId,
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     auto it = sessions_.find(userId);
     if (it == sessions_.end()) {
-        std::cerr << "[ws] send failed: " << userId << " not connected\n";
+        LOGE("[ws] send failed: " + userId + " not connected");
         return false;
     }
     it->second->send(message);
@@ -124,7 +125,7 @@ bool WsServer::send(const std::string& userId,
 }
 
 void WsServer::removeSession(const std::string& userId) {
-    std::cout << "[ws] user disconnected: " << userId << "\n";
+    LOG("[ws] user disconnected: " + userId);
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     sessions_.erase(userId);
 }
