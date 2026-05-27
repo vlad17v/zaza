@@ -271,7 +271,7 @@ std::vector<uint8_t> TurnDispatcher::signResponse(
     buf[3] =  adjusted_len       & 0xFF;
 
     std::string buf_str(buf.begin(), buf.end());
-    auto mi = crypto::hmac_sha1_bytes(key_vec, buf_str);
+    auto mi = crypto::hmac_sha1(key_vec, buf_str);
 
     std::vector<uint8_t> result = resp;
     result[2] = (adjusted_len >> 8) & 0xFF;

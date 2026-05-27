@@ -117,7 +117,7 @@ bool LongTermCred::verifyMessageIntegrityMd5(const uint8_t*     raw_msg,
     std::vector<uint8_t> key_vec(key_bytes.begin(), key_bytes.end());
 
     std::string buf_str(buf.begin(), buf.end());
-    auto computed = crypto::hmac_sha1_bytes(key_vec, buf_str);
+    auto computed = crypto::hmac_sha1(key_vec, buf_str);
 
     std::vector<uint8_t> expected(raw_msg + mi_pos + 4,
                                   raw_msg + mi_pos + 4 + 20);
