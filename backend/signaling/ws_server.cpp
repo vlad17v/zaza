@@ -39,9 +39,6 @@ void WsSession::read() {
             auto msg = beast::buffers_to_string(self->buffer_.data());
             self->buffer_.consume(self->buffer_.size());
 
-            std::cout << "[ws] message from " << self->userId_
-                      << ": " << msg << "\n";
-
             self->on_message_(self->userId_, msg);
             self->read();
         });

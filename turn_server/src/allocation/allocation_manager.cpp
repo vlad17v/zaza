@@ -323,12 +323,9 @@ void AllocationManager::handleSend(
     const message::TurnMessage& msg,
     const transport::Endpoint&  client)
 {
-    std::cout << "[alloc] handleSend from " << client.address << ":" << client.port << "\n";
-
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = by_client_.find(endpointKey(client));
     if (it == by_client_.end()) {
-        std::cout << "[alloc] no allocation for client\n";
         return;
     }
     auto& alloc = it->second;
@@ -337,7 +334,6 @@ void AllocationManager::handleSend(
     auto data_attr = msg.findAttr(message::AttrType::Data);
 
     if (!peer_attr || peer_attr->value.size() < 8) {
-        std::cout << "[alloc] no peer attr\n";
         return;
     }
 
@@ -352,20 +348,12 @@ void AllocationManager::handleSend(
     boost::asio::ip::address_v4 addr_v4(ip);
     transport::Endpoint peer{addr_v4.to_string(), port};
 
-    std::cout << "[alloc] peer=" << peer.address << ":" << peer.port
-              << " perm=" << alloc->hasPermission(peer.address) << "\n";
-
     if (!alloc->hasPermission(peer.address)) return;
     if (!data_attr) return;
 
-    // Найти аллокацию получателя по relay адресу
     auto peer_it = by_relay_.find(endpointKey(peer));
     if (peer_it != by_relay_.end()) {
-        // Получатель — тоже TURN клиент на этом сервере
-        // Переслать как Data Indication
         auto& peer_alloc = peer_it->second;
-        std::cout << "[alloc] relay to client " << peer_alloc->clientAddr.address
-                  << ":" << peer_alloc->clientAddr.port << "\n";
 
         boost::system::error_code ec;
         auto sender_v4 = boost::asio::ip::make_address_v4(
@@ -381,7 +369,6 @@ void AllocationManager::handleSend(
         return;
     }
 
-    // Получатель внешний — отправить напрямую
     if (peer_send_)
         peer_send_(data_attr->value, peer);
 }

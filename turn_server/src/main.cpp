@@ -61,9 +61,6 @@ int main(int argc, char* argv[]) {
         return [&dispatcher, transport_ptr = &t](const uint8_t*             data,
                                                 size_t                     size,
                                                 const transport::Endpoint& from) {
-            std::cout << "[turn] packet from "
-                    << from.address << ":" << from.port
-                    << " size=" << size << "\n";
             dispatcher->onPacket(data, size, from, *transport_ptr);
         };
     };

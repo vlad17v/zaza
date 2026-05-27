@@ -8,7 +8,6 @@
 #include <chrono>
 #include <vector>
 #include <iostream>
-#include <iomanip>
 
 namespace turn_auth {
 
@@ -109,7 +108,6 @@ bool LongTermCred::verifyMessageIntegrityMd5(const uint8_t*     raw_msg,
     if (!found) return false;
     if (mi_pos + 4 + 20 > raw_len) return false;
 
-    // Буфер: байты до MI атрибута с скорректированным length
     std::vector<uint8_t> buf(raw_msg, raw_msg + mi_pos);
     uint16_t adjusted_len = static_cast<uint16_t>(mi_pos - 20 + 4 + 20);
     buf[2] = (adjusted_len >> 8) & 0xFF;
@@ -145,14 +143,7 @@ AuthResult LongTermCred::authenticate(
     bool has_mi = mi_sha256.has_value() || mi_md5.has_value();
 
     if (!username_attr || !realm_attr || !nonce_attr || !has_mi){
-        std::cout << "[auth] username=" << username_attr.has_value()
-          << " realm=" << realm_attr.has_value()
-          << " nonce=" << nonce_attr.has_value()
-          << " mi256=" << mi_sha256.has_value()
-          << " mi_md5=" << mi_md5.has_value()
-          << " has_mi=" << has_mi << "\n";
-
-          return AuthResult::MissingCredentials;
+        return AuthResult::MissingCredentials;
     }
 
     std::string username(username_attr->value.begin(),
@@ -187,11 +178,9 @@ AuthResult LongTermCred::authenticate(
             if (!verifyMessageIntegrity(raw_msg, raw_len, username, password))
                 return AuthResult::BadIntegrity;
         } else if (mi_md5.has_value()) {
-            std::cout << "[auth] calling verifyMessageIntegrityMd5\n";
             if (!verifyMessageIntegrityMd5(raw_msg, raw_len, username, password))
                 return AuthResult::BadIntegrity;
         } else {
-            std::cout << "[auth] no MI attr found\n";
         }
 
     if (msg.method != message::Method::Allocate &&

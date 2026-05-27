@@ -67,16 +67,6 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
                                  transport::ITransport&      transport) {
 
     current_transport_ = &transport;
-    std::cout << "[dispatcher] method=" << static_cast<int>(msg.method)
-              << " class=" << static_cast<int>(msg.msg_class)
-              << " from " << from.address << ":" << from.port
-              << " attrs=" << msg.attributes.size() << "\n";
-
-    for (auto& attr : msg.attributes) {
-        std::cout << "[dispatcher] attr type=0x"
-                  << std::hex << static_cast<int>(attr.type)
-                  << " len=" << std::dec << attr.value.size() << "\n";
-    }
 
     if (msg.msg_class == message::MessageClass::Indication) {
         if (msg.method == message::Method::Send) {
@@ -93,10 +83,6 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
 
     auto auth_result = long_term_cred_.authenticate(
         msg, raw, raw_len, allocated_username);
-
-    std::cout << "[dispatcher] size=" << raw_len
-          << " attrs=" << msg.attributes.size()
-          << " auth=" << static_cast<int>(auth_result) << "\n";
 
     switch (auth_result) {
         case turn_auth::AuthResult::MissingCredentials: {
@@ -169,18 +155,12 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
         case message::Method::Allocate: {
             std::string realm_str = long_term_cred_.realm();
             resp = alloc_manager_.handleAllocate(msg, from, username, realm_str);
-            std::cout << "[dispatcher] allocate resp size=" << resp.size();
             if (resp.size() >= 2) {
                 message::TurnMessage r;
                 message::parse(resp.data(), resp.size(), r);
                 auto relay = r.findAttr(message::AttrType::XorRelayedAddress);
                 auto mapped = r.findAttr(message::AttrType::XorMappedAddress);
-                std::cout << "[dispatcher] allocate:"
-                        << " relay=" << (relay.has_value() ? "yes" : "NO")
-                        << " mapped=" << (mapped.has_value() ? "yes" : "NO")
-                        << " size=" << resp.size() << "\n";
             }
-            std::cout << "\n";
             break;
         }
         case message::Method::Refresh:
@@ -212,36 +192,24 @@ void TurnDispatcher::handleChannelData(const uint8_t*             data,
     auto r = message::parse_channel_data(data, size, ch);
     if (r != message::ChannelDataResult::Ok) return;
 
-    std::cout << "[dispatcher] channelData size=" << size
-              << " channel=" << ch.channel_number << "\n";
-
     auto alloc = alloc_manager_.findByClient(from);
     if (!alloc) {
-        std::cout << "[dispatcher] channelData: no alloc\n";
         return;
     }
 
-    // Найти peer по channel number
     auto binding_it = alloc->channels.find(ch.channel_number);
     if (binding_it == alloc->channels.end()) {
-        std::cout << "[dispatcher] channelData: no channel binding\n";
         return;
     }
 
     transport::Endpoint peer = binding_it->second.peer;
-    std::cout << "[dispatcher] channelData peer="
-              << peer.address << ":" << peer.port << "\n";
 
     if (!alloc->hasPermission(peer.address)) {
-        std::cout << "[dispatcher] channelData: no permission\n";
         return;
     }
 
-    // Найти аллокацию получателя по relay адресу
     auto peer_alloc = alloc_manager_.findByRelay(peer);
     if (peer_alloc) {
-        // Получатель тоже TURN клиент — переслать как ChannelData
-        // найти обратный channel binding у получателя
         uint16_t peer_channel = 0;
         for (auto& [num, bind] : peer_alloc->channels) {
             if (bind.peer.address == alloc->relayedAddr.address &&
@@ -251,16 +219,10 @@ void TurnDispatcher::handleChannelData(const uint8_t*             data,
             }
         }
 
-        std::cout << "[dispatcher] channelData relay to "
-                  << peer_alloc->clientAddr.address << ":"
-                  << peer_alloc->clientAddr.port
-                  << " channel=" << peer_channel << "\n";
-
         if (peer_channel != 0) {
             auto fwd = message::make_channel_data(peer_channel, ch.data);
             transport.send(fwd, peer_alloc->clientAddr);
         } else {
-            // Нет обратного channel — послать как Data Indication
             boost::system::error_code ec;
             auto relay_v4 = boost::asio::ip::make_address_v4(
                 alloc->relayedAddr.address, ec);
@@ -275,7 +237,6 @@ void TurnDispatcher::handleChannelData(const uint8_t*             data,
         return;
     }
 
-    // Внешний пир
     transport.send(ch.data, peer);
 }
 
