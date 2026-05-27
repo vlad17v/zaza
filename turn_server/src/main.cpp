@@ -4,9 +4,9 @@
 #include "transport/dtls_transport.hpp"
 #include "transport/ssl_context_factory.hpp"
 #include "core/turn_dispatcher.hpp"
+#include "log/logger.hpp"
 
 #include <boost/asio.hpp>
-#include <iostream>
 #include <string>
 #include <csignal>
 #include <memory>
@@ -16,7 +16,7 @@ namespace asio = boost::asio;
 static asio::io_context* g_ioc = nullptr;
 
 static void signal_handler(int) {
-    std::cout << "\n[turn] shutting down...\n";
+    LOG("[turn] shutting down...");
     if (g_ioc) g_ioc->stop();
 }
 
@@ -28,12 +28,14 @@ int main(int argc, char* argv[]) {
     std::string relay_addr    = "127.0.0.1";
     uint16_t    port_min      = 49152;
     uint16_t    port_max      = 65535;
+    std::string log_file;
 
-    if (argc >= 3) {
-        cert_file = argv[1];
-        key_file  = argv[2];
-    }
+    if (argc >= 3) { cert_file = argv[1]; key_file = argv[2]; }
     if (argc >= 4) shared_secret = argv[3];
+    if (argc >= 5) log_file = argv[4];
+
+    if (!log_file.empty())
+        Logger::instance().setFile(log_file);
 
     asio::io_context ioc;
     g_ioc = &ioc;
@@ -58,9 +60,9 @@ int main(int argc, char* argv[]) {
     transport::DtlsTransport dtls(ioc, dtls_raw, "0.0.0.0", 5349);
 
     auto make_handler = [&dispatcher](transport::ITransport& t) {
-        return [&dispatcher, transport_ptr = &t](const uint8_t*             data,
-                                                size_t                     size,
-                                                const transport::Endpoint& from) {
+        return [&dispatcher, transport_ptr = &t](const uint8_t* data,
+                                                  size_t         size,
+                                                  const transport::Endpoint& from) {
             dispatcher->onPacket(data, size, from, *transport_ptr);
         };
     };
@@ -75,13 +77,14 @@ int main(int argc, char* argv[]) {
     tls.run();
     dtls.run();
 
-    std::cout << "[turn] listening on UDP/TCP :3478, TLS/DTLS :5349\n";
-    std::cout << "[turn] realm: " << realm << "\n";
-    std::cout << "[turn] relay: " << relay_addr
-              << " ports " << port_min << "-" << port_max << "\n";
+    LOG("[turn] listening on UDP/TCP :3478, TLS/DTLS :5349");
+    LOG("[turn] realm: " + realm);
+    LOG("[turn] relay: " + relay_addr +
+        " ports " + std::to_string(port_min) +
+        "-"       + std::to_string(port_max));
 
     ioc.run();
 
-    std::cout << "[turn] stopped\n";
+    LOG("[turn] stopped");
     return 0;
 }

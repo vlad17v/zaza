@@ -4,6 +4,7 @@
 #include "signaling/ws_server.hpp"
 #include "signaling/router.hpp"
 #include "calls/call_manager.hpp"
+#include "log/logger.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -21,7 +22,7 @@ namespace ssl  = boost::asio::ssl;
 static asio::io_context* g_ioc = nullptr;
 
 static void signal_handler(int) {
-    std::cout << "\n[backend] shutting down...\n";
+    LOG("[backend] shutting down...");
     if (g_ioc) g_ioc->stop();
 }
 
@@ -35,7 +36,12 @@ int main(int argc, char* argv[]) {
     const std::string turn_host       = "localhost";
     const std::string turn_secret     = "turn_shared_secret";
     const int64_t     jwt_ttl         = 86400;  
-    const int         expire_interval = 5;     
+    const int         expire_interval = 5;
+    
+    std::string log_file;
+    if (argc >= 5) log_file = argv[4];
+    if (!log_file.empty())
+        Logger::instance().setFile(log_file);
 
     std::string cert = cert_file;
     std::string key  = key_file;
@@ -44,7 +50,7 @@ int main(int argc, char* argv[]) {
         key  = argv[2];
     }
 
-    std::cout << "[backend] starting on " << host << ":" << port << "\n";
+    LOG("[backend] starting on " + host + ":" + std::to_string(port));
 
     asio::io_context ioc;
     g_ioc = &ioc;
@@ -65,13 +71,13 @@ int main(int argc, char* argv[]) {
             ssl::context::single_dh_use);
         ssl_ctx.use_certificate_chain_file(cert);
         ssl_ctx.use_private_key_file(key, ssl::context::pem);
-        std::cout << "[backend] TLS loaded: " << cert << "\n";
+        LOG("[backend] TLS loaded: " + cert);
     } catch (const std::exception& e) {
-        std::cerr << "[backend] TLS error: " << e.what() << "\n";
-        std::cerr << "[backend] generate cert: openssl req -x509 "
+        LOGE("[backend] TLS error: " + std::string(e.what()));
+        LOGE("[backend] generate cert: openssl req -x509 "
                      "-newkey rsa:2048 -nodes "
                      "-keyout tls/key.pem -out tls/cert.pem "
-                     "-days 365 -subj /CN=localhost\n";
+                     "-days 365 -subj /CN=localhost");
         return 1;
     }
 
@@ -118,12 +124,10 @@ int main(int argc, char* argv[]) {
     schedule_expire();
 
     http_server.run();
-    std::cout << "[backend] listening on https://"
-              << host << ":" << port << "\n";
+    LOG("[backend] listening on https://" + host + ":" + std::to_string(port));
 
     unsigned int threads = std::max(2u,
         std::thread::hardware_concurrency());
-    std::cout << "[backend] io threads: " << threads << "\n";
 
     std::vector<std::thread> thread_pool;
     for (unsigned i = 1; i < threads; ++i)
@@ -136,6 +140,6 @@ int main(int argc, char* argv[]) {
     for (auto& t : thread_pool)
         if (t.joinable()) t.join();
 
-    std::cout << "[backend] stopped\n";
+    LOG("[backend] stopped");
     return 0;
 }

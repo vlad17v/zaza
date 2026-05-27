@@ -4,10 +4,10 @@
 #include "crypto/sha256.hpp"
 #include "crypto/base64.hpp"
 #include "crypto/constant_time.hpp"
+#include "log/logger.hpp"
 
 #include <chrono>
 #include <vector>
-#include <iostream>
 
 namespace turn_auth {
 
@@ -30,7 +30,6 @@ bool LongTermCred::verifyMessageIntegrity(const uint8_t*     raw_msg,
     if (raw_len < 20) return false;
 
     uint16_t attrs_len = (static_cast<uint16_t>(raw_msg[2]) << 8) | raw_msg[3];
-
     size_t mi_pos = 0;
     bool   found  = false;
     size_t offset = 20;
@@ -108,8 +107,9 @@ bool LongTermCred::verifyMessageIntegrityMd5(const uint8_t*     raw_msg,
     if (!found) return false;
     if (mi_pos + 4 + 20 > raw_len) return false;
 
-    std::vector<uint8_t> buf(raw_msg, raw_msg + mi_pos);
     uint16_t adjusted_len = static_cast<uint16_t>(mi_pos - 20 + 4 + 20);
+
+    std::vector<uint8_t> buf(raw_msg, raw_msg + mi_pos);
     buf[2] = (adjusted_len >> 8) & 0xFF;
     buf[3] =  adjusted_len       & 0xFF;
 
@@ -142,9 +142,8 @@ AuthResult LongTermCred::authenticate(
 
     bool has_mi = mi_sha256.has_value() || mi_md5.has_value();
 
-    if (!username_attr || !realm_attr || !nonce_attr || !has_mi){
+    if (!username_attr || !realm_attr || !nonce_attr || !has_mi)
         return AuthResult::MissingCredentials;
-    }
 
     std::string username(username_attr->value.begin(),
                          username_attr->value.end());
@@ -175,13 +174,12 @@ AuthResult LongTermCred::authenticate(
         return AuthResult::BadIntegrity;
 
     if (mi_sha256.has_value()) {
-            if (!verifyMessageIntegrity(raw_msg, raw_len, username, password))
-                return AuthResult::BadIntegrity;
-        } else if (mi_md5.has_value()) {
-            if (!verifyMessageIntegrityMd5(raw_msg, raw_len, username, password))
-                return AuthResult::BadIntegrity;
-        } else {
-        }
+        if (!verifyMessageIntegrity(raw_msg, raw_len, username, password))
+            return AuthResult::BadIntegrity;
+    } else if (mi_md5.has_value()) {
+        if (!verifyMessageIntegrityMd5(raw_msg, raw_len, username, password))
+            return AuthResult::BadIntegrity;
+    }
 
     if (msg.method != message::Method::Allocate &&
         !allocated_username.empty() &&

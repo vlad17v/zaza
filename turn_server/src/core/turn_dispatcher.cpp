@@ -1,8 +1,9 @@
 #include "turn_dispatcher.hpp"
 #include "crypto/sha256.hpp"
 #include "crypto/hmac.hpp"
+#include "log/logger.hpp"
 
-#include <iostream>
+#include <sstream>
 
 TurnDispatcher::TurnDispatcher(asio::io_context&  ioc,
                                 const std::string& realm,
@@ -51,8 +52,8 @@ void TurnDispatcher::onPacket(const uint8_t*             data,
         message::TurnMessage msg;
         auto result = message::parse(data, size, msg);
         if (result != message::ParseResult::Ok) {
-            std::cerr << "[turn] parse failed: "
-                      << static_cast<int>(result) << "\n";
+            LOGE("[turn] parse failed from " + from.address + ":" +
+                 std::to_string(from.port));
             return;
         }
         handleStun(msg, data, size, from, transport);
@@ -65,13 +66,11 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
                                  size_t                      raw_len,
                                  const transport::Endpoint&  from,
                                  transport::ITransport&      transport) {
-
     current_transport_ = &transport;
 
     if (msg.msg_class == message::MessageClass::Indication) {
-        if (msg.method == message::Method::Send) {
+        if (msg.method == message::Method::Send)
             alloc_manager_.handleSend(msg, from);
-        }
         return;
     }
 
@@ -128,12 +127,16 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
                 .addAttr(message::AttrType::Realm, realm_v)
                 .addAttr(message::AttrType::Nonce, nonce_v)
                 .build();
+            LOGE("[turn] auth failed (bad integrity/expired)"
+                 " from " + from.address + ":" + std::to_string(from.port));
             send(transport, from, resp);
             return;
         }
         case turn_auth::AuthResult::WrongCredentials: {
             auto resp = message::make_error(
                 msg.transaction_id, 441, "Wrong Credentials");
+            LOGE("[turn] auth failed (wrong credentials)"
+                 " from " + from.address + ":" + std::to_string(from.port));
             send(transport, from, resp);
             return;
         }
@@ -147,7 +150,6 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
         username = std::string(username_attr->value.begin(),
                                username_attr->value.end());
 
-    
     std::string password = hmac_validator_.getPassword(username);
     std::vector<uint8_t> resp;
 
@@ -158,8 +160,17 @@ void TurnDispatcher::handleStun(const message::TurnMessage& msg,
             if (resp.size() >= 2) {
                 message::TurnMessage r;
                 message::parse(resp.data(), resp.size(), r);
-                auto relay = r.findAttr(message::AttrType::XorRelayedAddress);
-                auto mapped = r.findAttr(message::AttrType::XorMappedAddress);
+                if (r.msg_class == message::MessageClass::SuccessResponse) {
+                    LOG("[turn] allocate success"
+                        " user=" + username +
+                        " client=" + from.address + ":" +
+                        std::to_string(from.port));
+                } else {
+                    LOGE("[turn] allocate failed"
+                         " user=" + username +
+                         " client=" + from.address + ":" +
+                         std::to_string(from.port));
+                }
             }
             break;
         }
@@ -193,18 +204,15 @@ void TurnDispatcher::handleChannelData(const uint8_t*             data,
     if (r != message::ChannelDataResult::Ok) return;
 
     auto alloc = alloc_manager_.findByClient(from);
-    if (!alloc) {
-        return;
-    }
+    if (!alloc) return;
 
     auto binding_it = alloc->channels.find(ch.channel_number);
-    if (binding_it == alloc->channels.end()) {
-        return;
-    }
+    if (binding_it == alloc->channels.end()) return;
 
     transport::Endpoint peer = binding_it->second.peer;
 
     if (!alloc->hasPermission(peer.address)) {
+        LOGE("[turn] channel data denied: no permission for " + peer.address);
         return;
     }
 
