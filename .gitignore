@@ -1,5 +1,6 @@
 build/
 data/*.db
+data/*.log
 backend/certs/*.pem
 backend/certs/*.key
 backend/certs/*.crt
@@ -8,3 +9,6 @@ backend/certs/*.crt
 .idea/
 *.swp
 *.swo
+*.env
+!backend.env.example
+!turn.env.example

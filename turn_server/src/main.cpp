@@ -5,6 +5,7 @@
 #include "transport/ssl_context_factory.hpp"
 #include "core/turn_dispatcher.hpp"
 #include "log/logger.hpp"
+#include "config/config.hpp"
 
 #include <boost/asio.hpp>
 #include <string>
@@ -21,18 +22,21 @@ static void signal_handler(int) {
 }
 
 int main(int argc, char* argv[]) {
-    std::string cert_file     = "../backend/certs/cert.pem";
-    std::string key_file      = "../backend/certs/key.pem";
-    std::string shared_secret = "turn_shared_secret";
-    std::string realm         = "chat.example.com";
-    std::string relay_addr    = "127.0.0.1";
-    uint16_t    port_min      = 49152;
-    uint16_t    port_max      = 65535;
-    std::string log_file;
+    std::string env_file = (argc >= 2) ? argv[1] : "../turn.env";
+    try {
+        Config::instance().load(env_file);
+    } catch (const std::exception& e) {
+        std::cerr << "[turn] config: " << e.what() << " — using defaults\n";
+    }
 
-    if (argc >= 3) { cert_file = argv[1]; key_file = argv[2]; }
-    if (argc >= 4) shared_secret = argv[3];
-    if (argc >= 5) log_file = argv[4];
+    std::string cert_file     = CFG_DEF("CERT_FILE",     "../backend/certs/cert.pem");
+    std::string key_file      = CFG_DEF("KEY_FILE",      "../backend/certs/key.pem");
+    std::string shared_secret = CFG_DEF("SHARED_SECRET", "turn_shared_secret");
+    std::string realm         = CFG_DEF("REALM",         "chat.example.com");
+    std::string relay_addr    = CFG_DEF("RELAY_ADDR",    "127.0.0.1");
+    uint16_t    port_min      = CFG_INT("PORT_MIN",       49152);
+    uint16_t    port_max      = CFG_INT("PORT_MAX",       65535);
+    std::string log_file      = CFG_DEF("LOG_FILE",       "");
 
     if (!log_file.empty())
         Logger::instance().setFile(log_file);

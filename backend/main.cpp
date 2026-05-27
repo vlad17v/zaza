@@ -5,6 +5,7 @@
 #include "signaling/router.hpp"
 #include "calls/call_manager.hpp"
 #include "log/logger.hpp"
+#include "config/config.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -19,36 +20,37 @@
 namespace asio = boost::asio;
 namespace ssl  = boost::asio::ssl;
 
-static asio::io_context* g_ioc = nullptr;
+static asio::io_context* g_ioc  = nullptr;
+static asio::executor_work_guard<asio::io_context::executor_type>* g_work = nullptr;
 
 static void signal_handler(int) {
     LOG("[backend] shutting down...");
-    if (g_ioc) g_ioc->stop();
+    if (g_work) g_work->reset();
+    if (g_ioc)  g_ioc->stop();
 }
 
 int main(int argc, char* argv[]) {
-    const std::string host            = "0.0.0.0";
-    const uint16_t    port            = 8080;
-    const std::string db_path         = "../data/chat.db";
-    const std::string jwt_secret      = "change_me_in_production";
-    const std::string cert_file       = "../backend/certs/cert.pem";
-    const std::string key_file        = "../backend/certs/key.pem";
-    const std::string turn_host       = "localhost";
-    const std::string turn_secret     = "turn_shared_secret";
-    const int64_t     jwt_ttl         = 86400;  
-    const int         expire_interval = 5;
-    
-    std::string log_file;
-    if (argc >= 5) log_file = argv[4];
+    std::string env_file = (argc >= 2) ? argv[1] : "../backend.env";
+    try {
+        Config::instance().load(env_file);
+    } catch (const std::exception& e) {
+        std::cerr << "[backend] config: " << e.what() << " — using defaults\n";
+    }
+
+    const std::string host            = CFG_DEF("HOST",            "0.0.0.0");
+    const uint16_t    port            = CFG_INT("PORT",            8080);
+    const std::string db_path         = CFG_DEF("DB_PATH",         "../data/chat.db");
+    const std::string jwt_secret      = CFG_DEF("JWT_SECRET",      "change_me_in_production");
+    const int64_t     jwt_ttl         = CFG_INT("JWT_TTL",         86400);
+    const std::string cert_file       = CFG_DEF("CERT_FILE",       "../backend/certs/cert.pem");
+    const std::string key_file        = CFG_DEF("KEY_FILE",        "../backend/certs/key.pem");
+    const std::string turn_host       = CFG_DEF("TURN_HOST",       "localhost");
+    const std::string turn_secret     = CFG_DEF("TURN_SECRET",     "turn_shared_secret");
+    const int         expire_interval = CFG_INT("EXPIRE_INTERVAL", 5);
+    const std::string log_file        = CFG_DEF("LOG_FILE",        "");
+
     if (!log_file.empty())
         Logger::instance().setFile(log_file);
-
-    std::string cert = cert_file;
-    std::string key  = key_file;
-    if (argc >= 3) {
-        cert = argv[1];
-        key  = argv[2];
-    }
 
     LOG("[backend] starting on " + host + ":" + std::to_string(port));
 
@@ -56,6 +58,7 @@ int main(int argc, char* argv[]) {
     g_ioc = &ioc;
 
     auto work = asio::make_work_guard(ioc);
+    g_work = &work;
 
     std::signal(SIGINT,  signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -69,9 +72,9 @@ int main(int argc, char* argv[]) {
             ssl::context::no_tlsv1           |
             ssl::context::no_tlsv1_1         |
             ssl::context::single_dh_use);
-        ssl_ctx.use_certificate_chain_file(cert);
-        ssl_ctx.use_private_key_file(key, ssl::context::pem);
-        LOG("[backend] TLS loaded: " + cert);
+        ssl_ctx.use_certificate_chain_file(cert_file);
+        ssl_ctx.use_private_key_file(key_file, ssl::context::pem);
+        LOG("[backend] TLS loaded: " + cert_file);
     } catch (const std::exception& e) {
         LOGE("[backend] TLS error: " + std::string(e.what()));
         LOGE("[backend] generate cert: openssl req -x509 "
@@ -86,10 +89,10 @@ int main(int argc, char* argv[]) {
 
     api::TurnConfig turn_config;
     turn_config.host          = turn_host;
-    turn_config.port_plain    = 3478;
-    turn_config.port_tls      = 5349;
     turn_config.shared_secret = turn_secret;
-    turn_config.ttl           = 3600;
+    turn_config.port_plain    = CFG_INT("TURN_PORT_PLAIN", 3478);
+    turn_config.port_tls      = CFG_INT("TURN_PORT_TLS",  5349);
+    turn_config.ttl           = CFG_INT("TURN_TTL",       3600);
 
     signaling::WsServer ws_server(auth_service);
 
