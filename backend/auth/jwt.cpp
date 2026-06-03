@@ -1,9 +1,11 @@
 #include "jwt.hpp"
-
 #include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/nlohmann-json/traits.h>
 #include <chrono>
 
 namespace auth {
+
+using traits = jwt::traits::nlohmann_json;
 
 Jwt::Jwt(std::string secret)
     : secret_(std::move(secret))
@@ -13,21 +15,21 @@ std::string Jwt::sign(const std::string& userId, int64_t ttl_seconds) const {
     auto now = std::chrono::system_clock::now();
     auto exp = now + std::chrono::seconds(ttl_seconds);
 
-    return jwt::create()
+    return jwt::create<traits>()
         .set_type("JWT")
         .set_issued_at(now)
         .set_expires_at(exp)
-        .set_payload_claim("userId", jwt::claim(userId))
+        .set_payload_claim("userId", jwt::basic_claim<traits>(userId))
         .sign(jwt::algorithm::hs256{ secret_ });
 }
 
 JwtPayload Jwt::verify(const std::string& token) const {
     try {
-        auto verifier = jwt::verify()
+        auto verifier = jwt::verify<traits>()
             .allow_algorithm(jwt::algorithm::hs256{ secret_ })
             .with_type("JWT");
 
-        auto decoded = jwt::decode(token);
+        auto decoded = jwt::decode<traits>(token);
         verifier.verify(decoded);
 
         JwtPayload payload;
