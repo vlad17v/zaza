@@ -50,7 +50,6 @@ public:
     void onFailed(FailedCallback cb) { on_failed_ = std::move(cb); }
 
     std::shared_ptr<rtc::Track> audioTrack() { return audio_track_; }
-    bool isConnected() const { return connected_.load(); }
 
 private:
     void setupCallbacks();
