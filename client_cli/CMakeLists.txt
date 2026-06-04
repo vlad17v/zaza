@@ -1,4 +1,4 @@
-find_package(Boost    REQUIRED COMPONENTS system)
+find_package(Boost    REQUIRED)
 find_package(OpenSSL  REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
