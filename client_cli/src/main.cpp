@@ -9,6 +9,7 @@
 #include "audio/capture.hpp"
 #include "audio/playback.hpp"
 #include "audio/wav.hpp"
+#include "config/config.hpp"
 
 #include <nlohmann/json.hpp>
 #include <openssl/crypto.h>
@@ -26,7 +27,17 @@ static void signal_handler(int) {
         g_repl->requestQuit();
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::string env_file = (argc >= 2) ? argv[1] : "../client.env";
+    try {
+        Config::instance().load(env_file);
+    } catch (const std::exception& e) {
+        std::cerr << "[client] config: " << e.what() << " — using defaults\n";
+    }
+
+    const std::string server_host = CFG_DEF("SERVER_HOST", "localhost");
+    const uint16_t    server_port = CFG_INT("SERVER_PORT", 8080);
+
     session::Session session;
     cli::Repl        repl(session);
 
@@ -36,7 +47,7 @@ int main() {
     std::signal(SIGINT,  signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    signaling::WsClient       ws_client("localhost", 8080);
+    signaling::WsClient       ws_client(server_host, server_port);
     signaling::MessageHandler handler(session, repl);
 
     auto ws_send = [&ws_client](const std::string& msg) {
@@ -89,8 +100,8 @@ int main() {
             sdp_handler->handleAnswer(sdp);
         });
         handler.onIce([&](const std::string& c,
-                        const std::string& m,
-                        int ml) {
+                          const std::string& m,
+                          int ml) {
             ice_handler->handleRemoteCandidate(c, m, ml);
         });
 
@@ -168,11 +179,11 @@ int main() {
                 return;
             }
         } catch (...) {}
-
         handler.handle(msg);
     });
 
-    ws_client.onClose([&repl, &session, &pc, &sdp_handler, &ice_handler, &stopAudio]() {
+    ws_client.onClose([&repl, &session, &pc,
+                       &sdp_handler, &ice_handler, &stopAudio]() {
         repl.print("[ws] disconnected");
         if (session.isInCall()) {
             stopAudio();
