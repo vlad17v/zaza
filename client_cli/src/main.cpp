@@ -107,11 +107,13 @@ int main(int argc, char* argv[]) {
 
         capture = std::make_unique<audio::Capture>();
         capture->start([&](const int16_t* data, size_t count) {
-            if (pc && pc->isConnected() && pc->audioTrack()) {
-                auto bytes = reinterpret_cast<const std::byte*>(data);
-                pc->audioTrack()->send(
-                    rtc::binary(bytes, bytes + count * sizeof(int16_t)));
-            }
+            try {
+                if (pc && pc->isConnected() && pc->audioTrack()) {
+                    auto bytes = reinterpret_cast<const std::byte*>(data);
+                    pc->audioTrack()->send(
+                        rtc::binary(bytes, bytes + count * sizeof(int16_t)));
+                }
+            } catch (...) {}
         });
 
         playback = std::make_unique<audio::Playback>();
