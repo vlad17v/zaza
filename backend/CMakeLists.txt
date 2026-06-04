@@ -33,4 +33,5 @@ target_include_directories(backend_server PRIVATE
 
 target_link_libraries(backend_server PRIVATE
     backend
+    pthread
 )

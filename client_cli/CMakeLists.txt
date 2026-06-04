@@ -38,4 +38,5 @@ target_link_libraries(client_cli PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     ${DATACHANNEL_LIB}
+    pthread
 )

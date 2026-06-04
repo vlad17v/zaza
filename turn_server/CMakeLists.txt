@@ -23,4 +23,5 @@ target_link_libraries(turn_server PRIVATE
     Boost::system
     OpenSSL::SSL
     OpenSSL::Crypto
+    pthread
 )

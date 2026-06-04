@@ -18,16 +18,13 @@ if(NOT TARGET SQLite3::SQLite3)
     )
 endif()
 find_package(nlohmann_json REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system)
-
-include(FetchContent)
-FetchContent_Declare(
-    jwt-cpp
-    GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
-    GIT_TAG        v0.7.0
-)
-set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(jwt-cpp)
+find_package(Boost REQUIRED)
+if(NOT TARGET Boost::system)
+    add_library(Boost::system INTERFACE IMPORTED)
+    target_include_directories(Boost::system INTERFACE
+	${Boost_INCLUDE_DIRS})
+endif()
+find_package(jwt-cpp REQUIRED)
 
 option(BUILD_TESTS         "Собрать все тесты"          OFF)
 option(BUILD_TESTS_SHARED  "Собрать тесты shared/"      OFF)
