@@ -51,6 +51,7 @@ void Repl::processLine(const std::string& line) {
     else if (cmd.name == "mute")     result = commands_.mute    (cmd.args);
     else if (cmd.name == "unmute")   result = commands_.unmute  (cmd.args);
     else if (cmd.name == "record")   result = commands_.record  (cmd.args);
+    else if (cmd.name == "register") result = commands_.register_(cmd.args);
     else if (cmd.name == "stop")     result = commands_.stop    (cmd.args);
     else if (cmd.name == "sendfile") result = commands_.sendfile(cmd.args);
     else if (cmd.name == "status")   result = commands_.status  (cmd.args);
@@ -58,8 +59,8 @@ void Repl::processLine(const std::string& line) {
              cmd.name == "exit")     result = commands_.quit    (cmd.args);
     else
         result = {false, "unknown command: " + cmd.name +
-                         " (try: login call accept reject hangup "
-                         "mute unmute record stop sendfile status quit)"};
+                 " (try: login register call accept reject hangup "
+                 "mute unmute record stop sendfile status quit)"};
 
     {
         std::lock_guard<std::mutex> lock(output_mutex_);

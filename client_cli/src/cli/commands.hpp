@@ -34,6 +34,7 @@ public:
     CommandResult stop    (const std::vector<std::string>& args);
     CommandResult sendfile(const std::vector<std::string>& args);
     CommandResult quit    (const std::vector<std::string>& args);
+    CommandResult register_(const std::vector<std::string>& args);
 
     bool shouldQuit() const { return quit_; }
 

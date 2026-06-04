@@ -196,6 +196,29 @@ CommandResult Commands::quit(const std::vector<std::string>& args) {
     return {true, "bye"};
 }
 
+CommandResult Commands::register_(const std::vector<std::string>& args) {
+    if (args.size() < 2)
+        return {false, "usage: register <userId> <password>"};
+
+    try {
+        net::HttpClient client(CFG_DEF("SERVER_HOST", "localhost"),
+                               CFG_INT("SERVER_PORT", 8080));
+
+        json body = {{"userId",   args[0]},
+                     {"password", args[1]}};
+
+        auto resp = client.post("/api/auth/register", body.dump());
+
+        if (resp.status != 200 && resp.status != 201)
+            return {false, "register failed: " + resp.body};
+
+        return {true, "registered as " + args[0]};
+
+    } catch (const std::exception& e) {
+        return {false, std::string("register error: ") + e.what()};
+    }
+}
+
 void Commands::setWsSend(WsSendCallback cb) {
     ws_send_ = std::move(cb);
 }
