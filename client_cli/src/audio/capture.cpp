@@ -102,38 +102,44 @@ std::vector<int16_t> Capture::stopRecording() {
 }
 
 void Capture::loop() {
-    if (!openDevice()) {
-        running_.store(false);
-        return;
-    }
+    bool has_device = openDevice();
 
     std::vector<int16_t> frame(frame_size_);
 
     while (running_.load()) {
 #if HAS_OSS
-        ssize_t bytes = ::read(fd_,
-                               frame.data(),
-                               frame_size_ * sizeof(int16_t));
-        if (bytes <= 0) {
-            if (running_.load())
-                std::cerr << "[capture] read error\n";
-            break;
-        }
+        if (has_device) {
+            ssize_t bytes = ::read(fd_,
+                                   frame.data(),
+                                   frame_size_ * sizeof(int16_t));
+            if (bytes <= 0) {
+                if (running_.load())
+                    std::cerr << "[capture] read error\n";
+                break;
+            }
 
-        size_t samples = bytes / sizeof(int16_t);
+            size_t samples = bytes / sizeof(int16_t);
 
-        if (recording_.load()) {
-            std::lock_guard<std::mutex> lock(record_mutex_);
-            record_buf_.insert(record_buf_.end(),
-                               frame.begin(),
-                               frame.begin() + samples);
-        }
+            if (recording_.load()) {
+                std::lock_guard<std::mutex> lock(record_mutex_);
+                record_buf_.insert(record_buf_.end(),
+                                   frame.begin(),
+                                   frame.begin() + samples);
+            }
 
-        if (!muted_.load() && callback_) {
-            callback_(frame.data(), samples);
-        } else if (callback_) {
-            std::vector<int16_t> silence(samples, 0);
-            callback_(silence.data(), samples);
+            if (!muted_.load() && callback_) {
+                callback_(frame.data(), samples);
+            } else if (callback_) {
+                std::vector<int16_t> silence(samples, 0);
+                callback_(silence.data(), samples);
+            }
+        } else {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(frame_ms_));
+            if (callback_) {
+                std::vector<int16_t> silence(frame_size_, 0);
+                callback_(silence.data(), frame_size_);
+            }
         }
 #else
         std::this_thread::sleep_for(
@@ -145,7 +151,7 @@ void Capture::loop() {
 #endif
     }
 
-    closeDevice();
+    if (has_device) closeDevice();
 }
 
 }

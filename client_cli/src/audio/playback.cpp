@@ -98,10 +98,7 @@ void Playback::playFile(const std::vector<int16_t>& samples) {
 }
 
 void Playback::loop() {
-    if (!openDevice()) {
-        running_.store(false);
-        return;
-    }
+    bool has_device = openDevice();
 
     std::vector<int16_t> frame(frame_size_);
 
@@ -109,13 +106,18 @@ void Playback::loop() {
         jitter_buffer_.read(frame.data(), frame_size_);
 
 #if HAS_OSS
-        ssize_t written = ::write(fd_,
-                                   frame.data(),
-                                   frame_size_ * sizeof(int16_t));
-        if (written < 0) {
-            if (running_.load())
-                std::cerr << "[playback] write error\n";
-            break;
+        if (has_device) {
+            ssize_t written = ::write(fd_,
+                                       frame.data(),
+                                       frame_size_ * sizeof(int16_t));
+            if (written < 0) {
+                if (running_.load())
+                    std::cerr << "[playback] write error\n";
+                break;
+            }
+        } else {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(frame_ms_));
         }
 #else
         std::this_thread::sleep_for(
@@ -123,7 +125,7 @@ void Playback::loop() {
 #endif
     }
 
-    closeDevice();
+    if (has_device) closeDevice();
 }
 
 }
