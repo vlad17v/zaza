@@ -1,5 +1,6 @@
 #include "commands.hpp"
 #include "http/http_client.hpp"
+#include "config/config.hpp"
 
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -7,9 +8,6 @@
 namespace cli {
 
 using json = nlohmann::json;
-
-static const std::string kHost = "localhost";
-static const uint16_t    kPort = 8080;
 
 Commands::Commands(session::Session& session)
     : session_(session)
@@ -20,7 +18,8 @@ CommandResult Commands::login(const std::vector<std::string>& args) {
         return {false, "usage: login <userId> <password>"};
 
     try {
-        net::HttpClient client(kHost, kPort);
+        net::HttpClient client(CFG_DEF("SERVER_HOST", "localhost"),
+                       CFG_INT("SERVER_PORT", 8080));
 
         json body = {{"userId",   args[0]},
                      {"password", args[1]}};
