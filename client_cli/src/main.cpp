@@ -184,11 +184,13 @@ int main(int argc, char* argv[]) {
         handler.handle(msg);
     });
 
-    ws_client.onClose([&repl, &session, &pc,
-                       &sdp_handler, &ice_handler, &stopAudio]() {
+    ws_client.onClose([&]() {
         repl.print("[ws] disconnected");
         if (session.isInCall()) {
             stopAudio();
+            if (pc) {
+                try { pc->close(); } catch (...) {}
+            }
             pc.reset();
             sdp_handler.reset();
             ice_handler.reset();
