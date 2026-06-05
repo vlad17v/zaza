@@ -164,6 +164,16 @@ int main(int argc, char* argv[]) {
     ws_client.onMessage([&](const std::string& msg) {
         try {
             auto j = nlohmann::json::parse(msg);
+
+            if (j.value("type", "") == "error") {
+                handler.handle(msg);
+                if (session.call.state == session::AppState::Calling) {
+                    stopAudio();
+                    session.call = session::CallContext{};
+                }
+                return;
+            }
+
             if (j.value("type", "") == "rtc.config") {
                 handler.handle(msg);
                 initRtc();
