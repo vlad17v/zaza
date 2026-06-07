@@ -2,6 +2,7 @@
 #include "crypto/sha256.hpp"
 #include "crypto/base64.hpp"
 #include "crypto/constant_time.hpp"
+#include "config/config.hpp"
 #include <iostream>
 #include <cassert>
 #include <iomanip>
@@ -145,6 +146,29 @@ int main() {
         } catch (const std::invalid_argument&) {}
     }
     std::cout << "[base64] OK\n";
+
+    std::cout << "\n=== Config ===\n";
+
+    {
+        const char* tmp = "/tmp/test_config.env";
+        {
+            std::ofstream f(tmp);
+            f << "# comment\n";
+            f << "KEY1=value1\n";
+            f << "KEY2=42\n";
+            f << "KEY3=\n";
+            f << "KEY4=\"quoted\"\n";
+        }
+        Config::instance().load(tmp);
+        assert(Config::instance().get("KEY1") == "value1");
+        assert(Config::instance().getInt("KEY2", 0) == 42);
+        assert(Config::instance().get("KEY3") == "");
+        assert(Config::instance().get("KEY4") == "quoted");
+        assert(Config::instance().get("MISSING", "default") == "default");
+        assert(Config::instance().getInt("MISSING", 99) == 99);
+        std::cout << "[config] load and get OK\n";
+        std::remove(tmp);
+    }
 
     std::cout << "\nAll tests passed\n";
     return 0;

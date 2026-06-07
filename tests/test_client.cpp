@@ -324,6 +324,22 @@ int main() {
         std::cout << "[commands] quit while in call OK\n";
     }
 
+    {
+        session::Session s;
+        cli::Commands cmd(s);
+        auto r = cmd.register_({});
+        assert(!r.ok);
+        std::cout << "[commands] register no args OK\n";
+    }
+
+    {
+        session::Session s;
+        cli::Commands cmd(s);
+        auto r = cmd.register_({"alice"});
+        assert(!r.ok);
+        std::cout << "[commands] register one arg OK\n";
+    }
+
     std::cout << "\n=== Record / sendfile commands ===\n";
 
     {
