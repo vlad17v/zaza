@@ -9,7 +9,7 @@ if(BUILD_TESTS_BACKEND)
         ${CMAKE_SOURCE_DIR}/backend
         ${CMAKE_SOURCE_DIR}/shared
     )
-    target_link_libraries(test_backend PRIVATE shared backend)
+    target_link_libraries(test_backend PRIVATE shared backend pthread)
 endif()
 
 if(BUILD_TESTS_TURN)
@@ -22,6 +22,7 @@ if(BUILD_TESTS_TURN)
         Boost::system
         OpenSSL::SSL
         OpenSSL::Crypto
+        pthread
     )
     target_sources(test_turn PRIVATE
         ${CMAKE_SOURCE_DIR}/turn_server/src/message/parser.cpp
@@ -45,6 +46,7 @@ if(BUILD_TESTS_CLIENT)
         Boost::system
         OpenSSL::SSL
         OpenSSL::Crypto
+        pthread
     )
     target_sources(test_client PRIVATE
         ${CMAKE_SOURCE_DIR}/client_cli/src/cli/parser.cpp
