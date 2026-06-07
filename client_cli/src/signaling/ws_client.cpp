@@ -86,6 +86,11 @@ void WsClient::readLoop() {
             connected_.store(false);
             if (!stop_.load()) {
                 if (on_close_) on_close_();
+
+                if (reconnect_thread_.joinable() &&
+                    reconnect_thread_.get_id() != std::this_thread::get_id())
+                    reconnect_thread_.join();
+
                 reconnect_thread_ = std::thread(
                     [this]() { reconnectLoop(last_token_); });
             }
