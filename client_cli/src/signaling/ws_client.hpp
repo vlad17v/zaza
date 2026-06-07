@@ -57,7 +57,8 @@ private:
     bool        verify_cert_;
 
     asio::io_context        ioc_;
-    std::unique_ptr<WsStream> ws_;
+    std::shared_ptr<WsStream> ws_;
+    std::mutex ws_mutex_;
 
     std::atomic<bool>       connected_{false};
     std::atomic<bool>       stop_{false};

@@ -70,11 +70,17 @@ void WsClient::connect(const std::string& token) {
 
 void WsClient::readLoop() {
     beast::flat_buffer buf;
+    
     while (!stop_.load()) {
-        if (!ws_) break;
+        std::shared_ptr<WsStream> ws_local;
+        {
+            std::lock_guard<std::mutex> lock(ws_mutex_);
+            ws_local = ws_;
+        }
+        if (!ws_local) break;
         
         boost::system::error_code ec;
-        ws_->read(buf, ec);
+        ws_local->read(buf, ec);
         
         if (ec) {
             connected_.store(false);
@@ -85,8 +91,6 @@ void WsClient::readLoop() {
             }
             break;
         }
-        
-        if (!ws_) break;
         
         auto msg = beast::buffers_to_string(buf.data());
         buf.consume(buf.size());
@@ -109,6 +113,11 @@ void WsClient::reconnectLoop(const std::string& token) {
 
         if (read_thread_.joinable())
             read_thread_.join();
+
+        {
+            std::lock_guard<std::mutex> lock(ws_mutex_);
+            ws_.reset();
+        }
 
         try {
             connect(token);
@@ -139,15 +148,21 @@ void WsClient::disconnect() {
     stop_.store(true);
     connected_.store(false);
 
-    if (ws_) {
-        boost::system::error_code ec;
-        ws_->close(websocket::close_code::normal, ec);
+    {
+        std::lock_guard<std::mutex> lock(ws_mutex_);
+        if (ws_) {
+            boost::system::error_code ec;
+            ws_->close(websocket::close_code::normal, ec);
+        }
     }
 
     if (read_thread_.joinable())
         read_thread_.join();
 
-    ws_.reset();
+    {
+        std::lock_guard<std::mutex> lock(ws_mutex_);
+        ws_.reset();
+    }
 
     if (reconnect_thread_.joinable() &&
         reconnect_thread_.get_id() != std::this_thread::get_id())
