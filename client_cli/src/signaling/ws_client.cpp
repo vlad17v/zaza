@@ -71,8 +71,11 @@ void WsClient::connect(const std::string& token) {
 void WsClient::readLoop() {
     beast::flat_buffer buf;
     while (!stop_.load()) {
+        if (!ws_) break;
+        
         boost::system::error_code ec;
         ws_->read(buf, ec);
+        
         if (ec) {
             connected_.store(false);
             if (!stop_.load()) {
@@ -82,6 +85,9 @@ void WsClient::readLoop() {
             }
             break;
         }
+        
+        if (!ws_) break;
+        
         auto msg = beast::buffers_to_string(buf.data());
         buf.consume(buf.size());
         if (on_message_) on_message_(msg);
