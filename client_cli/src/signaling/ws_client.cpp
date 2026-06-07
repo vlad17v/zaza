@@ -129,7 +129,7 @@ void WsClient::reconnectLoop(const std::string& token) {
             std::cout << "[ws] reconnected\n";
             return;
         } catch (const std::exception& e) {
-            std::cerr << "[ws] reconnect failed: " << e.what() << "\n";
+            std::cerr << "[ws] reconnect failed" << "\n";
         }
 
         delay = std::min(delay * 2, kMaxDelayMs);
