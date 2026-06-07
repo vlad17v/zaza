@@ -519,6 +519,7 @@ int main() {
 
     {
         session::Session s;
+        s.call.is_caller = true;
         cli::Repl repl(s);
         signaling::MessageHandler h(s, repl);
 
