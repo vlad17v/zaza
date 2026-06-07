@@ -225,6 +225,7 @@ int main() {
         assert(message::decodeMethod(0x0003) == message::Method::Allocate);
         assert(message::decodeMethod(0x0004) == message::Method::Refresh);
         assert(message::decodeMethod(0x0006) == message::Method::Send);
+        assert(message::decodeMethod(0x0007) == message::Method::Data);
         assert(message::decodeMethod(0x0008) == message::Method::CreatePermission);
         assert(message::decodeMethod(0x0009) == message::Method::ChannelBind);
         assert(message::decodeMethod(0xFFFF) == message::Method::Unknown);

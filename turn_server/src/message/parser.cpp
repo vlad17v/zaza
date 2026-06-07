@@ -18,6 +18,7 @@ Method decodeMethod(uint16_t msg_type) {
         case 0x003: return Method::Allocate;
         case 0x004: return Method::Refresh;
         case 0x006: return Method::Send;
+        case 0x007: return Method::Data;
         case 0x008: return Method::CreatePermission;
         case 0x009: return Method::ChannelBind;
         default:    return Method::Unknown;
