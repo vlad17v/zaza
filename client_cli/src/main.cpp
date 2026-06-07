@@ -16,6 +16,7 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
+#include <atomic>
 
 static cli::Repl*        g_repl    = nullptr;
 static session::Session* g_session = nullptr;
@@ -60,12 +61,28 @@ int main(int argc, char* argv[]) {
     std::unique_ptr<audio::Capture>             capture;
     std::unique_ptr<audio::Playback>            playback;
 
+    std::atomic<bool> call_cleanup_done{false};
+
     auto stopAudio = [&]() {
         if (capture)  capture->stop();
         if (playback) playback->stop();
     };
 
+    auto cleanupCall = [&]() {
+        if (call_cleanup_done.exchange(true)) return;
+        stopAudio();
+        if (pc) {
+            try { pc->close(); } catch (...) {}
+        }
+        pc.reset();
+        sdp_handler.reset();
+        ice_handler.reset();
+        session.call = session::CallContext{};
+    };
+
     auto initRtc = [&]() {
+        call_cleanup_done.store(false);
+
         if (pc) {
             try { pc->close(); } catch (...) {}
             pc.reset();
@@ -84,8 +101,7 @@ int main(int argc, char* argv[]) {
                 };
                 ws_send(msg.dump());
             }
-            stopAudio();
-            session.call = session::CallContext{};
+            cleanupCall();
         });
 
         sdp_handler = std::make_unique<rtc_client::SdpHandler>(
@@ -168,8 +184,7 @@ int main(int argc, char* argv[]) {
             if (j.value("type", "") == "error") {
                 handler.handle(msg);
                 if (session.call.state == session::AppState::Calling) {
-                    stopAudio();
-                    session.call = session::CallContext{};
+                    cleanupCall();
                 }
                 return;
             }
@@ -181,30 +196,22 @@ int main(int argc, char* argv[]) {
                     sdp_handler->startCall();
                 return;
             }
+
             if (j.value("type", "") == "call.ended" ||
                 j.value("type", "") == "call.failed") {
                 handler.handle(msg);
-                stopAudio();
-                pc.reset();
-                sdp_handler.reset();
-                ice_handler.reset();
+                cleanupCall();
                 return;
             }
         } catch (...) {}
+
         handler.handle(msg);
     });
 
     ws_client.onClose([&]() {
         repl.print("[ws] disconnected");
         if (session.isInCall()) {
-            stopAudio();
-            if (pc) {
-                try { pc->close(); } catch (...) {}
-            }
-            pc.reset();
-            sdp_handler.reset();
-            ice_handler.reset();
-            session.call = session::CallContext{};
+            cleanupCall();
             repl.print("[call] ended, reason: server disconnected");
         }
     });
