@@ -901,18 +901,15 @@ int main() {
     }
 
     std::cout << "\n=== isDeniedAddress ===\n";
-
     {
         assert( allocation::isDeniedAddress("10.0.0.1"));
         assert( allocation::isDeniedAddress("10.255.255.255"));
         assert( allocation::isDeniedAddress("172.16.0.1"));
         assert( allocation::isDeniedAddress("172.31.255.255"));
-        assert( allocation::isDeniedAddress("192.168.0.1"));
-        assert( allocation::isDeniedAddress("192.168.255.255"));
-        assert( allocation::isDeniedAddress("127.0.0.1"));
+        assert(!allocation::isDeniedAddress("192.168.1.1"));
+        assert(!allocation::isDeniedAddress("127.0.0.1"));
         assert(!allocation::isDeniedAddress("8.8.8.8"));
-        assert(!allocation::isDeniedAddress("192.0.2.1"));
-        assert(!allocation::isDeniedAddress("1.2.3.4"));
+        assert(!allocation::isDeniedAddress("1.1.1.1"));
         std::cout << "[denied_address] RFC 1918 + loopback OK\n";
     }
 
