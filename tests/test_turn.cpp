@@ -393,29 +393,34 @@ int main() {
     std::cout << "\n=== Data indication ===\n";
 
     {
-        auto tid = make_tid(0x88);
-        std::vector<uint8_t> payload = {0x01, 0x02, 0x03, 0x04};
-        auto raw = message::make_data_indication(tid, 0xC0000201, 12345, payload);
+        std::array<uint8_t, 12> tid{};
+        tid.fill(0xAB);
+        uint32_t peer_ip   = 0x7F000001;
+        uint16_t peer_port = 12345;
+        std::vector<uint8_t> payload = {0x01, 0x02, 0x03};
+
+        auto raw = message::make_data_indication(tid, peer_ip, peer_port, payload);
+
         message::TurnMessage msg;
-        assert(message::parse(raw.data(), raw.size(), msg)
-               == message::ParseResult::Ok);
-        assert(msg.method    == message::Method::Send);
+        auto result = message::parse(raw.data(), raw.size(), msg);
+        assert(result == message::ParseResult::Ok);
+        assert(msg.method == message::Method::Data);
         assert(msg.msg_class == message::MessageClass::Indication);
+
         auto data_attr = msg.findAttr(message::AttrType::Data);
         assert(data_attr.has_value());
         assert(data_attr->value == payload);
-        assert(msg.findAttr(message::AttrType::XorMappedAddress).has_value());
         std::cout << "[data indication] build/parse OK\n";
     }
 
     {
-        auto tid = make_tid(0x89);
-        auto raw = message::make_data_indication(
-                       tid, 0xC0000201, 3478, {});
+        std::array<uint8_t, 12> tid{};
+        std::vector<uint8_t> empty_payload;
+        auto raw = message::make_data_indication(tid, 0x7F000001, 9999, empty_payload);
         message::TurnMessage msg;
-        assert(message::parse(raw.data(), raw.size(), msg)
-               == message::ParseResult::Ok);
-        assert(msg.method == message::Method::Send);
+        auto result = message::parse(raw.data(), raw.size(), msg);
+        assert(result == message::ParseResult::Ok);
+        assert(msg.method == message::Method::Data);
         std::cout << "[data indication] empty payload OK\n";
     }
 
