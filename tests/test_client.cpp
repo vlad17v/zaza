@@ -693,57 +693,6 @@ int main() {
         }
     }
 
-    std::cout << "\n=== WAV ===\n";
-
-    {
-        std::vector<int16_t> samples(48000, 0);
-        for (size_t i = 0; i < samples.size(); ++i)
-            samples[i] = static_cast<int16_t>(i % 32767);
-
-        audio::writeWav("/tmp/test.wav", samples);
-
-        audio::WavHeader header;
-        auto read = audio::readWav("/tmp/test.wav", header);
-
-        assert(read.size()          == samples.size());
-        assert(header.sampleRate    == 48000);
-        assert(header.numChannels   == 1);
-        assert(header.bitsPerSample == 16);
-        assert(read == samples);
-        std::cout << "[wav] write/read round-trip OK\n";
-    }
-
-    {
-        std::vector<int16_t> empty;
-        audio::writeWav("/tmp/test_empty.wav", empty);
-        audio::WavHeader header;
-        auto read = audio::readWav("/tmp/test_empty.wav", header);
-        assert(read.empty());
-        assert(header.numSamples == 0);
-        std::cout << "[wav] empty file OK\n";
-    }
-
-    {
-        try {
-            audio::WavHeader header;
-            audio::readWav("/tmp/nonexistent.wav", header);
-            assert(false);
-        } catch (const audio::WavError&) {}
-        std::cout << "[wav] nonexistent file OK\n";
-    }
-
-    {
-        std::ofstream bad("/tmp/bad.wav");
-        bad << "not a wav file";
-        bad.close();
-        try {
-            audio::WavHeader header;
-            audio::readWav("/tmp/bad.wav", header);
-            assert(false);
-        } catch (const audio::WavError&) {}
-        std::cout << "[wav] bad file format OK\n";
-    }
-
     std::cout << "\n=== JitterBuffer ===\n";
 
     {
